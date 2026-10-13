@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   FileWarning,
@@ -19,7 +19,6 @@ import {
   Plus,
   Filter,
   MapPin,
-  Copy,
   ShieldCheck,
 } from "lucide-react";
 import {
@@ -33,6 +32,12 @@ import {
 } from "recharts";
 import { useAuth } from "./context/AuthContext";
 import Login from "./components/Login";
+import { getMyInfractions, appealInfraction } from "./services/infractions";
+import { getActiveZonesWithTariff } from "./services/parking";
+import { getCurrentStreetClosures } from "./services/streetClosures";
+import { getMyImpoundments } from "./services/impoundments";
+import { getMyAccidents } from "./services/accidents";
+import { getCurrentNationalId } from "./services/api";
 
 /**
  * Módulo 7 — Tránsito, Estacionamiento y Seguridad Vial
@@ -56,6 +61,42 @@ const formatCurrency = (n) =>
     currency: "ARS",
     maximumFractionDigits: 0,
   }).format(n);
+
+const formatDateTime = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+};
+
+// LocalDate del backend ("2026-12-31") → "31/12/2026". No se usa new Date()
+// porque lo interpretaría como UTC y en Argentina mostraría el día anterior.
+const formatLocalDate = (s) => (s ? s.split("-").reverse().join("/") : "—");
+
+// "1 activo" / "2 activos"
+const plural = (n, singular, pluralForm) => `${n} ${n === 1 ? singular : pluralForm}`;
+
+/**
+ * Carga una lista desde el backend y expone { data, loading, loaded, error, reload }.
+ * `loader` tiene que ser una función estable (las de services/ lo son).
+ * Con enabled=false no se hace ningún pedido (ej. endpoints solo para CIUDADANO).
+ */
+function useResource(loader, { enabled = true } = {}) {
+  const [state, setState] = useState({ data: [], loading: false, loaded: false, error: "" });
+
+  const reload = useCallback(async () => {
+    if (!enabled) return;
+    setState((prev) => ({ ...prev, loading: true, error: "" }));
+    try {
+      const data = await loader();
+      setState({ data: data || [], loading: false, loaded: true, error: "" });
+    } catch (err) {
+      setState((prev) => ({ ...prev, loading: false, error: err.message || "No se pudo cargar la información." }));
+    }
+  }, [loader, enabled]);
+
+  return { ...state, reload };
+}
 
 const inputCls =
   "w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors focus:border-slate-400 focus:ring-2 focus:ring-slate-100";
@@ -114,6 +155,41 @@ const INFRACCION_ESTADO = {
   Anulada: "emerald",
 };
 
+// InfractionType / InfractionStatus tal como los devuelve el backend real
+// (sección 4 de la guía de integración) — no coinciden con los códigos del
+// mock, así que acá se traducen para no tener que reescribir las pantallas.
+const INFRACTION_TYPE_LABEL = {
+  UNPAID_PARKING: "Estacionamiento medido sin pago",
+  SPEEDING: "Exceso de velocidad",
+  RED_LIGHT: "Cruce en semáforo rojo",
+  ILLEGAL_PARKING: "Estacionamiento prohibido",
+  NO_LICENSE: "Sin licencia de conducir",
+  RECKLESS_DRIVING: "Conducción imprudente",
+  OTHER: "Otra infracción",
+};
+
+const INFRACTION_STATUS_LABEL = {
+  PENDING_APPEAL: "Pendiente",
+  APPEALED: "Apelada",
+  CONFIRMED: "Confirmada",
+  ANNULLED: "Anulada",
+};
+
+// Adapta una infracción tal como la devuelve el backend (GET /infractions/mine)
+// a la forma que ya esperan MisInfracciones / InfraccionDrawer.
+function mapApiInfraction(api) {
+  return {
+    id: api.infractionId,
+    tipoLabel: INFRACTION_TYPE_LABEL[api.infractionType] || api.infractionType,
+    patente: api.licensePlate,
+    calle: [api.location?.street, api.location?.crossStreet].filter(Boolean).join(" y "),
+    inspector: api.inspectorId,
+    monto: api.finalAmount ?? api.baseAmount,
+    estado: INFRACTION_STATUS_LABEL[api.status] || api.status,
+    fecha: formatDateTime(api.infractionDateTime),
+  };
+}
+
 const CORTE_ESTADO = {
   Pendiente: "amber",
   Aprobado: "sky",
@@ -123,6 +199,23 @@ const CORTE_ESTADO = {
 };
 
 const VEHICULO_ESTADO = { Retenido: "red", Liberado: "emerald" };
+
+// Enums del backend usados en el Portal vecino (guía de integración §4)
+const CLOSURE_STATUS_UI = {
+  APPROVED: { label: "Próximo", tone: "sky" },
+  ACTIVE: { label: "Activo", tone: "orange" },
+};
+const REQUESTING_MODULE_LABEL = { OBRAS: "Obras", AMBIENTE: "Ambiente" };
+const IMPOUNDMENT_STATUS_UI = {
+  IMPOUNDED: { label: "Retenido", tone: "red" },
+  RELEASED: { label: "Liberado", tone: "emerald" },
+};
+const IMPOUNDMENT_ORIGIN_LABEL = { INFRACTION: "Infracción", OPERATION: "Operativo de control" };
+const ACCIDENT_STATUS_UI = {
+  PRELIMINARY: { label: "En revisión", tone: "amber" },
+  VERIFIED: { label: "Verificado", tone: "emerald" },
+};
+const INJURY_LEVEL_LABEL = { NONE: "sin lesiones", MINOR: "lesiones leves", SEVERE: "lesiones graves" };
 const ACCIDENTE_ESTADO = { Abierto: "amber", Cerrado: "emerald" };
 const INCUMPLIMIENTO_ESTADO = {
   "Pendiente validación": "amber",
@@ -818,7 +911,7 @@ function CitizenHome({ search, setSearch, trackCode, setTrackCode, trackResult, 
   );
 }
 
-function MisInfracciones({ infractions, onOpen, onBack }) {
+function MisInfracciones({ infractions, loading, error, onRetry, onOpen, onBack }) {
   return (
     <section className="mx-auto max-w-5xl px-6 py-12">
       <BackLink onClick={onBack} />
@@ -828,7 +921,20 @@ function MisInfracciones({ infractions, onOpen, onBack }) {
         desc="Estas son las infracciones registradas a tu nombre. Podés revisar el detalle y presentar un descargo cuando corresponda."
       />
       <div className="mt-8 space-y-4">
-        {infractions.map((inf) => (
+        {loading && <p className="text-sm text-slate-500">Cargando tus infracciones...</p>}
+
+        {!loading && error && (
+          <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm">
+            <p className="flex items-center gap-2 font-semibold text-red-700">
+              <AlertCircle size={16} /> {error}
+            </p>
+            <button onClick={onRetry} className="mt-2 flex items-center gap-1.5 font-medium text-red-700 hover:underline">
+              <RotateCcw size={14} /> Reintentar
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && infractions.map((inf) => (
           <button
             key={inf.id}
             onClick={() => onOpen(inf)}
@@ -852,7 +958,7 @@ function MisInfracciones({ infractions, onOpen, onBack }) {
             </div>
           </button>
         ))}
-        {infractions.length === 0 && <EmptyState text="No tenés infracciones registradas. ¡Buen manejo!" />}
+        {!loading && !error && infractions.length === 0 && <EmptyState text="No tenés infracciones registradas. ¡Buen manejo!" />}
       </div>
     </section>
   );
@@ -862,9 +968,8 @@ function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
   const [step, setStep] = useState("detail");
   const [motivo, setMotivo] = useState("");
   const [docs, setDocs] = useState([]);
-  const [error, setError] = useState(false);
-  const [attempted, setAttempted] = useState(false);
-  const [appealCode, setAppealCode] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   if (!infraction) return null;
 
@@ -873,19 +978,19 @@ function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
     setDocs((d) => [...d, ...files.map((f) => f.name)]);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!motivo.trim()) return;
-    if (!attempted) {
-      setAttempted(true);
-      setError(true);
-      return;
+    setError("");
+    setSubmitting(true);
+    try {
+      await onSubmitDescargo(infraction.id, motivo);
+      setStep("success");
+    } catch (err) {
+      setError(err.message || "No se pudo conectar con el servidor. Intentá nuevamente.");
+    } finally {
+      setSubmitting(false);
     }
-    setError(false);
-    const code = `APL-${Math.floor(100000 + Math.random() * 900000)}`;
-    setAppealCode(code);
-    onSubmitDescargo(infraction.id, motivo, code);
-    setStep("success");
   };
 
   return (
@@ -922,7 +1027,7 @@ function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
             {infraction.estado === "Apelada" && (
               <div className="mt-5 rounded-xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-700">
                 <p className="font-semibold">Tu descargo está en revisión</p>
-                <p className="mt-1 text-sky-600">&ldquo;{infraction.motivoDescargo}&rdquo;</p>
+                {infraction.motivoDescargo && <p className="mt-1 text-sky-600">&ldquo;{infraction.motivoDescargo}&rdquo;</p>}
               </div>
             )}
             {infraction.estado === "Anulada" && (
@@ -951,14 +1056,7 @@ function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
                 <p className="flex items-center gap-2 font-semibold text-red-700">
                   <AlertCircle size={16} /> Error al enviar
                 </p>
-                <p className="mt-1 text-red-600">No se pudo conectar con el servidor. Intentá nuevamente en unos minutos.</p>
-                <button
-                  type="button"
-                  onClick={() => setError(false)}
-                  className="mt-2 flex items-center gap-1.5 text-sm font-medium text-red-700 hover:underline"
-                >
-                  <RotateCcw size={14} /> Reintentar
-                </button>
+                <p className="mt-1 text-red-600">{error}</p>
               </div>
             )}
             <div className="mb-5 rounded-xl border border-slate-100 bg-slate-50 p-4">
@@ -996,8 +1094,8 @@ function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
                 </ul>
               )}
             </Field>
-            <Button type="submit" variant="primary" className="mt-4 w-full">
-              Enviar descargo
+            <Button type="submit" variant="primary" className="mt-4 w-full" disabled={submitting}>
+              {submitting ? "Enviando..." : "Enviar descargo"}
             </Button>
           </form>
         )}
@@ -1009,13 +1107,8 @@ function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
             </div>
             <h3 className="text-xl font-bold text-slate-900">¡Descargo registrado!</h3>
             <p className="mt-2 max-w-xs text-sm text-slate-500">
-              Tu descargo fue enviado correctamente. Usá el código para consultar su estado en cualquier momento.
+              Tu descargo fue enviado y ya quedó registrado en el sistema. Vas a poder ver el estado actualizado en tu lista de infracciones.
             </p>
-            <div className="mt-5 flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-5 py-3">
-              <span className="text-sm font-medium text-emerald-700">Código:</span>
-              <span className="font-mono text-sm font-bold text-emerald-800">{appealCode}</span>
-              <Copy size={14} className="text-emerald-500" />
-            </div>
             <Button variant="primary" className="mt-6" onClick={onClose}>
               <RotateCcw size={14} /> Volver a mis infracciones
             </Button>
@@ -1026,7 +1119,32 @@ function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
   );
 }
 
-function EstacionamientoCiudadano({ zones, onBack }) {
+// Bloque de "cargando" / "error + reintentar" compartido por las pantallas del portal.
+// Devuelve null cuando hay datos para mostrar.
+function ResourceStatus({ resource, loadingText }) {
+  if (resource.loading && !resource.loaded) {
+    return <p className="text-sm text-slate-500">{loadingText}</p>;
+  }
+  if (resource.error) {
+    return (
+      <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm">
+        <p className="flex items-center gap-2 font-semibold text-red-700">
+          <AlertCircle size={16} /> {resource.error}
+        </p>
+        <button onClick={resource.reload} className="mt-2 flex items-center gap-1.5 font-medium text-red-700 hover:underline">
+          <RotateCcw size={14} /> Reintentar
+        </button>
+      </div>
+    );
+  }
+  return null;
+}
+
+const CITIZEN_ONLY_TEXT = "Esta consulta está disponible para vecinos que ingresan con su cuenta de ciudadano.";
+
+function EstacionamientoCiudadano({ resource, onBack }) {
+  const zones = resource.data;
+  const ready = resource.loaded && !resource.error;
   return (
     <section className="mx-auto max-w-5xl px-6 py-12">
       <BackLink onClick={onBack} />
@@ -1035,23 +1153,38 @@ function EstacionamientoCiudadano({ zones, onBack }) {
         title="Estacionamiento medido"
         desc="Zonas, horarios y tarifas vigentes del estacionamiento medido en Ciudad UADE."
       />
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        {zones.map((z) => (
-          <div key={z.id} className="rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold text-slate-900">{z.nombre}</p>
-              <Badge tone="sky">{z.tarifa}/hora</Badge>
-            </div>
-            <p className="mt-2 text-sm text-slate-500">Horario: {z.horario}</p>
+      <div className="mt-8 space-y-4">
+        <ResourceStatus resource={resource} loadingText="Cargando zonas de estacionamiento..." />
+        {ready && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {zones.map((z) => (
+              <div key={z.zoneId} className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-semibold text-slate-900">{z.name}</p>
+                  {z.tariff ? (
+                    <Badge tone="sky">{formatCurrency(z.tariff.pricePerHour)}/hora</Badge>
+                  ) : (
+                    <Badge tone="slate">Tarifa a confirmar</Badge>
+                  )}
+                </div>
+                <p className="mt-2 text-sm text-slate-500">Horario: {z.allowedHours}</p>
+                {z.tariff?.validTo && (
+                  <p className="mt-1 text-xs text-slate-400">Tarifa vigente hasta el {formatLocalDate(z.tariff.validTo)}</p>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
+        )}
+        {ready && zones.length === 0 && <EmptyState text="No hay zonas de estacionamiento medido activas." />}
       </div>
     </section>
   );
 }
 
-function CortesCiudadano({ closures, onBack }) {
-  const visibles = closures.filter((c) => c.estado === "Activo" || c.estado === "Aprobado");
+function CortesCiudadano({ resource, onBack }) {
+  // Primero los activos, después los próximos (el backend ya los ordena por fecha de inicio).
+  const closures = [...resource.data].sort((a, b) => (a.status === b.status ? 0 : a.status === "ACTIVE" ? -1 : 1));
+  const ready = resource.loaded && !resource.error;
   return (
     <section className="mx-auto max-w-5xl px-6 py-12">
       <BackLink onClick={onBack} />
@@ -1061,81 +1194,138 @@ function CortesCiudadano({ closures, onBack }) {
         desc="Consultá los cortes de calle activos o próximos a activarse y sus desvíos habilitados."
       />
       <div className="mt-8 space-y-4">
-        {visibles.map((c) => (
-          <div key={c.id} className="rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold text-slate-900">{c.calle}</p>
-              <Badge tone={CORTE_ESTADO[c.estado]}>{c.estado}</Badge>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">
-              {c.fechaInicio} — {c.fechaFin} · Solicitado por {c.solicitante}
-            </p>
-            {c.desvios.length > 0 && (
-              <p className="mt-2 text-sm text-slate-500">Desvío sugerido: {c.desvios.join(", ")}</p>
-            )}
-          </div>
-        ))}
-        {visibles.length === 0 && <EmptyState text="No hay cortes de calle vigentes en este momento." />}
+        <ResourceStatus resource={resource} loadingText="Cargando cortes de calle..." />
+        {ready &&
+          closures.map((c) => {
+            const ui = CLOSURE_STATUS_UI[c.status] || { label: c.status, tone: "slate" };
+            return (
+              <div key={c.streetClosureId} className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-semibold text-slate-900">
+                    {c.affectedStreet?.length ? c.affectedStreet.join(", ") : "Calle a confirmar"}
+                  </p>
+                  <Badge tone={ui.tone}>{ui.label}</Badge>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {formatDateTime(c.startDate)} — {formatDateTime(c.endDate)} · Solicitado por{" "}
+                  {REQUESTING_MODULE_LABEL[c.requestingModule] || c.requestingModule}
+                </p>
+                {c.detours?.length > 0 && (
+                  <ul className="mt-3 space-y-1 text-sm text-slate-600">
+                    {c.detours.map((d, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <MapPin size={14} className="mt-0.5 shrink-0 text-slate-400" />
+                        <span>
+                          Desvío por <strong className="font-medium text-slate-800">{d.alternateRoute}</strong>
+                          {d.street ? ` (en ${d.street})` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {c.conditions?.length > 0 && (
+                  <p className="mt-2 text-xs text-slate-400">Condiciones: {c.conditions.join(" · ")}</p>
+                )}
+              </div>
+            );
+          })}
+        {ready && closures.length === 0 && <EmptyState text="No hay cortes de calle vigentes en este momento." />}
       </div>
     </section>
   );
 }
 
-function VehiculosCiudadano({ impounded, onBack }) {
+function VehiculosCiudadano({ resource, isCitizen, onBack }) {
   const [q, setQ] = useState("");
-  const found = q ? impounded.find((v) => v.patente === q) : null;
+  const ready = resource.loaded && !resource.error;
+  const vehicles = resource.data.filter((v) => !q || v.licensePlate?.toUpperCase().includes(q));
   return (
     <section className="mx-auto max-w-3xl px-6 py-12">
       <BackLink onClick={onBack} />
       <SectionHeader
         eyebrow="Portal vecino"
         title="Vehículos retenidos"
-        desc="Ingresá la patente para consultar el estado y los requisitos de liberación."
+        desc="Estos son los vehículos a tu nombre que ingresaron al depósito municipal, con su estado y los requisitos para liberarlos."
       />
-      <form onSubmit={(e) => e.preventDefault()} className="mt-8 flex gap-3">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value.toUpperCase())}
-          placeholder="Ej: AI654QR"
-          className={cx(inputCls, "sm:w-64")}
-        />
-      </form>
-      {q &&
-        (found ? (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-            <div className="flex items-center justify-between">
-              <p className="text-lg font-bold text-slate-900">{found.patente}</p>
-              <Badge tone={VEHICULO_ESTADO[found.estado]}>{found.estado}</Badge>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">
-              Depósito: {found.deposito} · Ingreso: {found.fechaIngreso}
-            </p>
-            <p className="mt-4 text-sm font-medium text-slate-700">Requisitos para liberar</p>
-            <ul className="mt-2 space-y-1.5 text-sm">
-              {Object.entries(found.requisitos).map(([k, v]) => (
-                <li key={k} className="flex items-center gap-2">
-                  {v ? (
-                    <CheckCircle2 size={15} className="text-emerald-500" />
-                  ) : (
-                    <AlertCircle size={15} className="text-amber-500" />
-                  )}
-                  <span className={v ? "text-slate-600" : "text-slate-500"}>{REQUISITO_LABEL[k]}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-4 text-sm text-slate-500">
-              Costo de acarreo y estadía:{" "}
-              <strong className="text-slate-800">{formatCurrency(found.montoAcarreo + found.montoEstadia)}</strong>
-            </p>
-          </div>
-        ) : (
-          <EmptyState text="No encontramos ningún vehículo retenido con esa patente." />
-        ))}
+      <div className="mt-8 space-y-4">
+        {!isCitizen && <EmptyState text={CITIZEN_ONLY_TEXT} />}
+        {isCitizen && <ResourceStatus resource={resource} loadingText="Buscando tus vehículos..." />}
+        {isCitizen && ready && resource.data.length > 1 && (
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value.toUpperCase())}
+            placeholder="Filtrar por patente"
+            className={cx(inputCls, "sm:w-64")}
+          />
+        )}
+        {isCitizen &&
+          ready &&
+          vehicles.map((v) => {
+            const ui = IMPOUNDMENT_STATUS_UI[v.status] || { label: v.status, tone: "slate" };
+            const released = v.status === "RELEASED";
+            return (
+              <div key={v.impoundmentId} className="rounded-2xl border border-slate-200 bg-white p-6">
+                <div className="flex items-center justify-between">
+                  <p className="text-lg font-bold text-slate-900">{v.licensePlate}</p>
+                  <Badge tone={ui.tone}>{ui.label}</Badge>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  Depósito: {v.depotLocation} · Ingreso: {formatDateTime(v.entryDateTime)}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Motivo: {v.reason} ({IMPOUNDMENT_ORIGIN_LABEL[v.originType] || v.originType})
+                </p>
+
+                {released ? (
+                  <>
+                    <p className="mt-4 text-sm font-medium text-slate-700">Requisitos verificados</p>
+                    <ul className="mt-2 space-y-1.5 text-sm">
+                      {(v.verifiedRequirements || []).map((r) => (
+                        <li key={r} className="flex items-center gap-2 text-slate-600">
+                          <CheckCircle2 size={15} className="text-emerald-500" /> {r}
+                        </li>
+                      ))}
+                    </ul>
+                    {v.towingAndStorageFee != null && (
+                      <p className="mt-4 text-sm text-slate-500">
+                        Acarreo y estadía abonados:{" "}
+                        <strong className="text-slate-800">{formatCurrency(v.towingAndStorageFee)}</strong>
+                        {v.paymentReference ? ` · Comprobante ${v.paymentReference}` : ""}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-4 text-sm font-medium text-slate-700">Requisitos para liberarlo</p>
+                    <ul className="mt-2 space-y-1.5 text-sm">
+                      {Object.values(REQUISITO_LABEL).map((r) => (
+                        <li key={r} className="flex items-center gap-2 text-slate-500">
+                          <AlertCircle size={15} className="text-amber-500" /> {r}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-4 text-xs text-slate-400">
+                      El personal del depósito verifica los requisitos y calcula el costo de acarreo y estadía al momento
+                      de la liberación.
+                    </p>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        {isCitizen && ready && resource.data.length === 0 && (
+          <EmptyState text="No tenés vehículos registrados en el depósito municipal." />
+        )}
+        {isCitizen && ready && resource.data.length > 0 && vehicles.length === 0 && (
+          <EmptyState text="Ninguno de tus vehículos retenidos coincide con esa patente." />
+        )}
+      </div>
     </section>
   );
 }
 
-function AccidentesCiudadano({ onBack }) {
+function AccidentesCiudadano({ resource, isCitizen, nationalId, onBack }) {
+  const ready = resource.loaded && !resource.error;
   return (
     <section className="mx-auto max-w-3xl px-6 py-12">
       <BackLink onClick={onBack} />
@@ -1150,6 +1340,43 @@ function AccidentesCiudadano({ onBack }) {
           denuncia desde el módulo de Atención Ciudadana. El equipo de Tránsito recibe la derivación automáticamente y
           asigna un inspector a la brevedad.
         </p>
+      </div>
+
+      <h3 className="mt-10 text-lg font-semibold text-slate-900">Siniestros en los que figurás</h3>
+      <div className="mt-4 space-y-4">
+        {!isCitizen && <EmptyState text={CITIZEN_ONLY_TEXT} />}
+        {isCitizen && <ResourceStatus resource={resource} loadingText="Buscando tus siniestros registrados..." />}
+        {isCitizen &&
+          ready &&
+          resource.data.map((a) => {
+            const ui = ACCIDENT_STATUS_UI[a.status] || { label: a.status, tone: "slate" };
+            const me = (a.persons || []).find((p) => p.nationalId === nationalId);
+            const myVehicles = (a.vehicles || []).filter((v) => v.ownerNationalId === nationalId);
+            const where = [a.location?.street, a.location?.crossStreet].filter(Boolean).join(" y ");
+            return (
+              <div key={a.accidentId} className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-semibold text-slate-900">{where || "Ubicación a confirmar"}</p>
+                  <Badge tone={ui.tone}>{ui.label}</Badge>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {formatDateTime(a.accidentDateTime)} · {plural(a.vehicles?.length || 0, "vehículo involucrado", "vehículos involucrados")}
+                </p>
+                <ul className="mt-3 space-y-1 text-sm text-slate-600">
+                  {me && <li>Figurás como persona involucrada ({INJURY_LEVEL_LABEL[me.injuryLevel] || me.injuryLevel}).</li>}
+                  {myVehicles.map((v) => (
+                    <li key={v.licensePlate}>Figurás como titular del vehículo {v.licensePlate}.</li>
+                  ))}
+                  {a.involvesInfrastructureDamage && (
+                    <li className="text-slate-500">Daños en la vía pública{a.damageDescription ? `: ${a.damageDescription}` : ""}.</li>
+                  )}
+                </ul>
+              </div>
+            );
+          })}
+        {isCitizen && ready && resource.data.length === 0 && (
+          <EmptyState text="No figurás en ningún siniestro vial registrado." />
+        )}
       </div>
     </section>
   );
@@ -2090,10 +2317,72 @@ function AuthenticatedApp({ role, username, onLogout }) {
     if (m === "staff") setStaffView("dashboard");
   };
 
-  const citizenInfractions = infractions.filter((i) => i.patente === CITIZEN_PLATE);
+  // Datos reales del Portal vecino. Los "mine" solo existen para CIUDADANO:
+  // para el resto de los roles no se piden y la pantalla lo explica.
+  const isCitizen = role === "CIUDADANO";
+  const nationalId = getCurrentNationalId();
+  const parkingZones = useResource(getActiveZonesWithTariff);
+  const currentClosures = useResource(getCurrentStreetClosures);
+  const myImpoundments = useResource(getMyImpoundments, { enabled: isCitizen });
+  const myAccidents = useResource(getMyAccidents, { enabled: isCitizen });
 
-  const handleSubmitDescargo = (id, motivo, code) => {
-    setInfractions((prev) => prev.map((i) => (i.id === id ? { ...i, estado: "Apelada", motivoDescargo: motivo, appealCode: code } : i)));
+  const [citizenInfractions, setCitizenInfractions] = useState([]);
+  const [citizenInfractionsLoading, setCitizenInfractionsLoading] = useState(false);
+  const [citizenInfractionsError, setCitizenInfractionsError] = useState("");
+
+  const loadCitizenInfractions = useCallback(async () => {
+    setCitizenInfractionsLoading(true);
+    setCitizenInfractionsError("");
+    try {
+      const data = await getMyInfractions();
+      setCitizenInfractions((data || []).map(mapApiInfraction));
+    } catch (err) {
+      setCitizenInfractionsError(err.message || "No se pudieron cargar tus infracciones.");
+    } finally {
+      setCitizenInfractionsLoading(false);
+    }
+  }, []);
+
+  // Se vuelve a pedir cada vez que el vecino entra a "Mis infracciones",
+  // así se refleja cualquier cambio de estado (ej. un descargo recién enviado).
+  useEffect(() => {
+    if (citizenView === "infracciones") {
+      loadCitizenInfractions();
+    }
+  }, [citizenView, loadCitizenInfractions]);
+
+  // Al volver al inicio se refrescan los contadores de las tarjetas; al entrar
+  // a una pantalla se refresca solo lo que esa pantalla muestra.
+  const reloadParking = parkingZones.reload;
+  const reloadClosures = currentClosures.reload;
+  const reloadImpoundments = myImpoundments.reload;
+  const reloadAccidents = myAccidents.reload;
+  useEffect(() => {
+    if (mode !== "ciudadano") return;
+    if (citizenView === "home") {
+      reloadParking();
+      reloadClosures();
+      reloadImpoundments();
+      reloadAccidents();
+      if (isCitizen) loadCitizenInfractions();
+    }
+    if (citizenView === "estacionamiento") reloadParking();
+    if (citizenView === "cortes") reloadClosures();
+    if (citizenView === "vehiculos") reloadImpoundments();
+    if (citizenView === "accidentes") reloadAccidents();
+  }, [mode, citizenView, isCitizen, reloadParking, reloadClosures, reloadImpoundments, reloadAccidents, loadCitizenInfractions]);
+
+  // Texto del pie de cada tarjeta: cargando / error / conteo real.
+  const countLabel = (resource, compute, { citizenOnly = false } = {}) => {
+    if (citizenOnly && !isCitizen) return "Solo para vecinos";
+    if (resource.error) return "Sin conexión";
+    if (!resource.loaded) return "Cargando…";
+    return compute(resource.data);
+  };
+
+  const handleSubmitDescargo = async (id, motivo) => {
+    await appealInfraction(id, motivo);
+    await loadCitizenInfractions();
   };
 
   const handleResolveInfraccion = (id, estado) => {
@@ -2171,8 +2460,8 @@ function AuthenticatedApp({ role, username, onLogout }) {
       icon: ParkingCircle,
       badge: { label: "NUEVO", tone: "emerald" },
       title: "Estacionamiento medido",
-      desc: "Consultá zonas, tarifas y ocupación del estacionamiento medido.",
-      count: `${zones.length} zonas activas`,
+      desc: "Consultá zonas, horarios y tarifas del estacionamiento medido.",
+      count: countLabel(parkingZones, (d) => plural(d.length, "zona activa", "zonas activas")),
     },
     {
       key: "cat-cortes",
@@ -2180,7 +2469,7 @@ function AuthenticatedApp({ role, username, onLogout }) {
       icon: TrafficCone,
       title: "Cortes de calle",
       desc: "Mirá los cortes de calle vigentes y los desvíos habilitados.",
-      count: `${closures.filter((c) => c.estado === "Activo").length} activos`,
+      count: countLabel(currentClosures, (d) => plural(d.filter((c) => c.status === "ACTIVE").length, "activo", "activos")),
     },
     {
       key: "cat-vehiculos",
@@ -2189,7 +2478,9 @@ function AuthenticatedApp({ role, username, onLogout }) {
       badge: { label: "URGENTE", tone: "red" },
       title: "Vehículos retenidos",
       desc: "Consultá el estado de un vehículo y los requisitos para liberarlo.",
-      count: `${impounded.filter((v) => v.estado === "Retenido").length} en depósito`,
+      count: countLabel(myImpoundments, (d) => `${d.filter((v) => v.status === "IMPOUNDED").length} en depósito`, {
+        citizenOnly: true,
+      }),
     },
     {
       key: "cat-accidentes",
@@ -2197,7 +2488,7 @@ function AuthenticatedApp({ role, username, onLogout }) {
       icon: Siren,
       title: "Accidentes y denuncias",
       desc: "Consultá cómo reportar un incidente vial.",
-      count: `${accidents.filter((a) => a.estado === "Abierto").length} activos`,
+      count: countLabel(myAccidents, (d) => plural(d.length, "registrado", "registrados"), { citizenOnly: true }),
     },
   ];
 
@@ -2210,15 +2501,31 @@ function AuthenticatedApp({ role, username, onLogout }) {
   const renderCitizen = () => {
     switch (citizenView) {
       case "infracciones":
-        return <MisInfracciones infractions={citizenInfractions} onOpen={setSelectedInfraction} onBack={() => setCitizenView("home")} />;
+        return (
+          <MisInfracciones
+            infractions={citizenInfractions}
+            loading={citizenInfractionsLoading}
+            error={citizenInfractionsError}
+            onRetry={loadCitizenInfractions}
+            onOpen={setSelectedInfraction}
+            onBack={() => setCitizenView("home")}
+          />
+        );
       case "estacionamiento":
-        return <EstacionamientoCiudadano zones={zones} onBack={() => setCitizenView("home")} />;
+        return <EstacionamientoCiudadano resource={parkingZones} onBack={() => setCitizenView("home")} />;
       case "cortes":
-        return <CortesCiudadano closures={closures} onBack={() => setCitizenView("home")} />;
+        return <CortesCiudadano resource={currentClosures} onBack={() => setCitizenView("home")} />;
       case "vehiculos":
-        return <VehiculosCiudadano impounded={impounded} onBack={() => setCitizenView("home")} />;
+        return <VehiculosCiudadano resource={myImpoundments} isCitizen={isCitizen} onBack={() => setCitizenView("home")} />;
       case "accidentes":
-        return <AccidentesCiudadano onBack={() => setCitizenView("home")} />;
+        return (
+          <AccidentesCiudadano
+            resource={myAccidents}
+            isCitizen={isCitizen}
+            nationalId={nationalId}
+            onBack={() => setCitizenView("home")}
+          />
+        );
       default:
         return (
           <CitizenHome
