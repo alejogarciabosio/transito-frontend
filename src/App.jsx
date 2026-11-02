@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Search,
   FileWarning,
@@ -32,7 +32,35 @@ import {
 } from "recharts";
 import { useAuth } from "./context/AuthContext";
 import Login from "./components/Login";
-import { getMyInfractions, appealInfraction } from "./services/infractions";
+import {
+  getMyInfractions,
+  appealInfraction,
+  getAllInfractions,
+  createInfraction,
+  confirmInfraction,
+  annulInfraction,
+} from "./services/infractions";
+import { getOperations, createOperation, closeOperation } from "./services/operations";
+import {
+  getStreetClosures,
+  approveStreetClosure,
+  rejectStreetClosure,
+  activateStreetClosure,
+  completeStreetClosure,
+} from "./services/streetClosures";
+import { getAccidents, createAccident, verifyAccident } from "./services/accidents";
+import { getImpoundments, createImpoundment, updateImpoundment, releaseImpoundment } from "./services/impoundments";
+import {
+  getAllZonesWithTariffs,
+  createParkingZone,
+  updateParkingZone,
+  deleteParkingZone,
+  createParkingTariff,
+  updateParkingTariff,
+  deleteParkingTariff,
+  getParkingSessions,
+  flagParkingSessionUnpaid,
+} from "./services/parking";
 import { getActiveZonesWithTariff } from "./services/parking";
 import { getCurrentStreetClosures } from "./services/streetClosures";
 import { getMyImpoundments } from "./services/impoundments";
@@ -41,12 +69,13 @@ import { getCurrentNationalId } from "./services/api";
 
 /**
  * Módulo 7 — Tránsito, Estacionamiento y Seguridad Vial
- * Frontend de demostración (mock, sin backend real) que cubre:
+ * Frontend conectado a la API REST del módulo (services/), que cubre:
  *  F1 Gestión de infracciones · F2 Cortes de calle · F3 Operativos
  *  F4 Accidentes viales · F5 Vehículos retenidos · F6 Estacionamiento medido
  *  F7 Consultas e indicadores
- * Incluye Portal Vecino (ciudadano) y Panel Interno (inspector / agente).
- * Listo para conectarse a la API REST real del backend del módulo.
+ * Incluye Portal Vecino (ciudadano) y Panel Interno (inspector / administrador).
+ * Cada pantalla del panel carga su listado desde el backend, vuelve a pedirlo después de
+ * cada operación exitosa y muestra solo las acciones que el rol autenticado puede hacer.
  */
 
 // ---------------------------------------------------------------------------
@@ -72,6 +101,13 @@ const formatDateTime = (iso) => {
 // LocalDate del backend ("2026-12-31") → "31/12/2026". No se usa new Date()
 // porque lo interpretaría como UTC y en Argentina mostraría el día anterior.
 const formatLocalDate = (s) => (s ? s.split("-").reverse().join("/") : "—");
+
+// Valor inicial de un <input type="datetime-local"> (ahora, a minuto exacto).
+const nowForInput = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 // "1 activo" / "2 activos"
 const plural = (n, singular, pluralForm) => `${n} ${n === 1 ? singular : pluralForm}`;
@@ -107,13 +143,16 @@ const inputCls =
 
 const INSPECTORS = ["Insp. Diaz", "Insp. Romero", "Insp. Fernández", "Insp. Gómez"];
 
+// Códigos = enum InfractionType del backend. `base` es el importe base que arma el
+// front (el backend solo guarda baseAmount/finalAmount, no calcula tarifas).
 const INFRACTION_TYPES = [
-  { code: "ESTAC_PROHIBIDO", label: "Estacionamiento prohibido", base: 15000 },
-  { code: "EXCESO_VELOCIDAD", label: "Exceso de velocidad", base: 45000 },
-  { code: "SEMAFORO_ROJO", label: "Cruce en semáforo rojo", base: 60000 },
-  { code: "SIN_CINTURON", label: "Circular sin cinturón", base: 20000 },
-  { code: "DOC_VENCIDA", label: "Documentación vencida", base: 25000 },
-  { code: "ESTAC_MEDIDO", label: "Estacionamiento medido sin pago", base: 18000 },
+  { code: "ILLEGAL_PARKING", label: "Estacionamiento prohibido", short: "Estac. prohibido", base: 15000 },
+  { code: "SPEEDING", label: "Exceso de velocidad", short: "Velocidad", base: 45000 },
+  { code: "RED_LIGHT", label: "Cruce en semáforo rojo", short: "Semáforo", base: 60000 },
+  { code: "UNPAID_PARKING", label: "Estacionamiento medido sin pago", short: "Estac. medido", base: 18000 },
+  { code: "NO_LICENSE", label: "Sin licencia de conducir", short: "Sin licencia", base: 25000 },
+  { code: "RECKLESS_DRIVING", label: "Conducción imprudente", short: "Imprudente", base: 50000 },
+  { code: "OTHER", label: "Otra infracción", short: "Otra", base: 20000 },
 ];
 
 const AGGRAVATING_FACTORS = [
@@ -125,10 +164,12 @@ const AGGRAVATING_FACTORS = [
 
 const CITIZEN_PLATE = "AB123CD";
 
+// Requisitos de liberación: el backend guarda el código tal cual se envía en
+// verifiedRequirements (texto libre, al menos uno); acá se les pone etiqueta.
 const REQUISITO_LABEL = {
-  pago: "Multa abonada",
-  documentacion: "Documentación del vehículo",
-  verificacion: "Verificación técnica",
+  DOCUMENTACION: "Documentación del vehículo",
+  PAGO_MULTA: "Multa abonada",
+  VERIFICACION_TECNICA: "Verificación técnica",
 };
 
 const BADGE_TONES = {
@@ -158,15 +199,7 @@ const INFRACCION_ESTADO = {
 // InfractionType / InfractionStatus tal como los devuelve el backend real
 // (sección 4 de la guía de integración) — no coinciden con los códigos del
 // mock, así que acá se traducen para no tener que reescribir las pantallas.
-const INFRACTION_TYPE_LABEL = {
-  UNPAID_PARKING: "Estacionamiento medido sin pago",
-  SPEEDING: "Exceso de velocidad",
-  RED_LIGHT: "Cruce en semáforo rojo",
-  ILLEGAL_PARKING: "Estacionamiento prohibido",
-  NO_LICENSE: "Sin licencia de conducir",
-  RECKLESS_DRIVING: "Conducción imprudente",
-  OTHER: "Otra infracción",
-};
+const INFRACTION_TYPE_LABEL = Object.fromEntries(INFRACTION_TYPES.map((t) => [t.code, t.label]));
 
 const INFRACTION_STATUS_LABEL = {
   PENDING_APPEAL: "Pendiente",
@@ -175,18 +208,25 @@ const INFRACTION_STATUS_LABEL = {
   ANNULLED: "Anulada",
 };
 
-// Adapta una infracción tal como la devuelve el backend (GET /infractions/mine)
-// a la forma que ya esperan MisInfracciones / InfraccionDrawer.
+// Adapta una infracción tal como la devuelve el backend (GET /infractions y
+// GET /infractions/mine) a la forma que usan las pantallas del vecino y del panel.
 function mapApiInfraction(api) {
   return {
     id: api.infractionId,
+    tipo: api.infractionType,
     tipoLabel: INFRACTION_TYPE_LABEL[api.infractionType] || api.infractionType,
     patente: api.licensePlate,
     calle: [api.location?.street, api.location?.crossStreet].filter(Boolean).join(" y "),
     inspector: api.inspectorId,
+    infractor: api.offenderNationalId,
+    evidencias: api.evidenceUrl || [],
+    agravantes: api.aggravatingFactors || [],
     monto: api.finalAmount ?? api.baseAmount,
     estado: INFRACTION_STATUS_LABEL[api.status] || api.status,
     fecha: formatDateTime(api.infractionDateTime),
+    // Hoy el backend no devuelve el texto del descargo (solo lo publica en el evento
+    // infractionAppealed). Si más adelante lo agrega, la pantalla lo muestra sola.
+    motivoDescargo: api.appealReason,
   };
 }
 
@@ -196,6 +236,7 @@ const CORTE_ESTADO = {
   Rechazado: "red",
   Activo: "orange",
   Finalizado: "slate",
+  Vencido: "amber",
 };
 
 const VEHICULO_ESTADO = { Retenido: "red", Liberado: "emerald" };
@@ -216,13 +257,6 @@ const ACCIDENT_STATUS_UI = {
   VERIFIED: { label: "Verificado", tone: "emerald" },
 };
 const INJURY_LEVEL_LABEL = { NONE: "sin lesiones", MINOR: "lesiones leves", SEVERE: "lesiones graves" };
-const ACCIDENTE_ESTADO = { Abierto: "amber", Cerrado: "emerald" };
-const INCUMPLIMIENTO_ESTADO = {
-  "Pendiente validación": "amber",
-  Validado: "red",
-  Descartado: "slate",
-};
-
 const STAFF_NAV = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "infracciones", label: "Infracciones", icon: FileWarning },
@@ -314,133 +348,6 @@ const INITIAL_INFRACTIONS = [
     estado: "Confirmada",
     fecha: "09/08/2026 10:00",
   },
-];
-
-const INITIAL_CLOSURES = [
-  {
-    id: "CC-01",
-    solicitante: "Obras",
-    calle: "Av. Rivadavia 4200-4600",
-    fechaInicio: "20/08/2026",
-    fechaFin: "25/08/2026",
-    estado: "Activo",
-    desvios: ["Calle San Martín", "Av. Belgrano"],
-  },
-  {
-    id: "CC-02",
-    solicitante: "Ambiente",
-    calle: "Calle Sarmiento 300",
-    fechaInicio: "22/08/2026",
-    fechaFin: "23/08/2026",
-    estado: "Pendiente",
-    desvios: [],
-  },
-  {
-    id: "CC-03",
-    solicitante: "Obras",
-    calle: "Av. Independencia 1000-1100",
-    fechaInicio: "15/08/2026",
-    fechaFin: "18/08/2026",
-    estado: "Finalizado",
-    desvios: ["Calle Perú"],
-  },
-  {
-    id: "CC-04",
-    solicitante: "Ambiente",
-    calle: "Calle Moreno 450",
-    fechaInicio: "24/08/2026",
-    fechaFin: "26/08/2026",
-    estado: "Aprobado",
-    desvios: ["Av. de Mayo"],
-  },
-];
-
-const INITIAL_OPERATIVOS = [
-  {
-    id: "OP-101",
-    tipo: "Control de alcoholemia",
-    zona: "Palermo",
-    fecha: "15/08/2026",
-    hora: "22:00",
-    inspectores: ["Insp. Diaz", "Insp. Romero"],
-    moviles: "M-04, M-11",
-    controles: 18,
-  },
-  {
-    id: "OP-102",
-    tipo: "Operativo de velocidad",
-    zona: "Av. General Paz",
-    fecha: "17/08/2026",
-    hora: "07:30",
-    inspectores: ["Insp. Fernández"],
-    moviles: "M-02",
-    controles: 42,
-  },
-];
-
-const INITIAL_ACCIDENTS = [
-  {
-    id: "ACC-201",
-    fecha: "16/08/2026 10:20",
-    ubicacion: "Av. Rivadavia y Callao",
-    personas: [{ nombre: "Juan Pérez", lesion: "minor" }],
-    vehiculos: [{ patente: "AF456KL" }, { patente: "AG789MN" }],
-    danosInfraestructura: true,
-    danoDesc: "Semáforo dañado en la esquina.",
-    estado: "Abierto",
-  },
-  {
-    id: "ACC-202",
-    fecha: "10/08/2026 19:45",
-    ubicacion: "Calle Lavalle 900",
-    personas: [],
-    vehiculos: [{ patente: "AH321OP" }],
-    danosInfraestructura: false,
-    danoDesc: "",
-    estado: "Cerrado",
-  },
-];
-
-const INITIAL_IMPOUNDED = [
-  {
-    id: "VEH-301",
-    patente: "AI654QR",
-    motivo: "Estacionamiento en doble fila reincidente",
-    deposito: "Depósito Norte",
-    origen: "Infracción",
-    originId: "INF-0998",
-    fechaIngreso: "14/08/2026",
-    estado: "Retenido",
-    requisitos: { pago: true, documentacion: false, verificacion: false },
-    montoAcarreo: 25000,
-    montoEstadia: 9000,
-  },
-  {
-    id: "VEH-302",
-    patente: "AJ987ST",
-    motivo: "Vehículo abandonado en la vía pública",
-    deposito: "Depósito Sur",
-    origen: "Operativo",
-    originId: "OP-098",
-    fechaIngreso: "10/08/2026",
-    estado: "Liberado",
-    requisitos: { pago: true, documentacion: true, verificacion: true },
-    montoAcarreo: 25000,
-    montoEstadia: 15000,
-    fechaLiberacion: "17/08/2026",
-  },
-];
-
-const INITIAL_ZONES = [
-  { id: "Z1", nombre: "Zona Azul — Microcentro", horario: "8 a 20 hs", tarifa: "$450", ocupacion: 78 },
-  { id: "Z2", nombre: "Zona Azul — Palermo", horario: "9 a 21 hs", tarifa: "$400", ocupacion: 63 },
-  { id: "Z3", nombre: "Zona Verde — Belgrano", horario: "8 a 18 hs", tarifa: "$350", ocupacion: 45 },
-];
-
-const INITIAL_VIOLATIONS = [
-  { id: "PV-01", patente: "AK123BC", zona: "Zona Azul — Microcentro", hora: "18/08/2026 11:20", estado: "Pendiente validación" },
-  { id: "PV-02", patente: "AL456DE", zona: "Zona Azul — Palermo", hora: "17/08/2026 15:05", estado: "Validado" },
-  { id: "PV-03", patente: "AM789FG", zona: "Zona Verde — Belgrano", hora: "16/08/2026 09:40", estado: "Descartado" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -658,11 +565,7 @@ function PhoneMock() {
 
 const ROLE_LABEL = {
   INSPECTOR: "Inspector",
-  SUPERVISOR: "Supervisor",
-  AUDITOR: "Auditor",
-  OPERADOR_CONTROL: "Operador de control",
-  PERSONAL_DEPOSITO: "Personal de depósito",
-  ADMIN_MUNICIPAL: "Admin municipal",
+  ADMINISTRADOR: "Administrador",
   CIUDADANO: "Vecino",
 };
 
@@ -1282,7 +1185,7 @@ function VehiculosCiudadano({ resource, isCitizen, onBack }) {
                     <ul className="mt-2 space-y-1.5 text-sm">
                       {(v.verifiedRequirements || []).map((r) => (
                         <li key={r} className="flex items-center gap-2 text-slate-600">
-                          <CheckCircle2 size={15} className="text-emerald-500" /> {r}
+                          <CheckCircle2 size={15} className="text-emerald-500" /> {REQUISITO_LABEL[r] || r}
                         </li>
                       ))}
                     </ul>
@@ -1411,15 +1314,22 @@ function StaffSidebar({ active, onChange }) {
   );
 }
 
-function Dashboard({ infractions, closures, operativos, accidents, impounded, zones }) {
+function Dashboard({ role, status, infractions, closures, operativos, accidents, impounded, zones, sessions }) {
   const activeInfractions = infractions.filter((i) => i.estado !== "Anulada").length;
+  // Pendientes de decisión: solo el administrador puede resolverlos.
+  const appealedInfractions = infractions.filter((i) => i.estado === "Apelada").length;
+  const closuresToEvaluate = closures.filter((c) => c.estado === "Pendiente").length;
   const activeClosures = closures.filter((c) => c.estado === "Activo").length;
   const runningOps = operativos.length;
   const inDeposit = impounded.filter((v) => v.estado === "Retenido").length;
-  const openAccidents = accidents.filter((a) => a.estado === "Abierto").length;
+  const openAccidents = accidents.filter((a) => a.status === "PRELIMINARY").length;
+  const openSessionsByZone = zones
+    .filter((z) => z.activa)
+    .map((z) => ({ id: z.id, nombre: z.nombre, abiertas: sessions.filter((x) => x.zonaId === z.id && !x.fin).length }));
+  const maxOpenSessions = Math.max(1, ...openSessionsByZone.map((z) => z.abiertas));
 
   const byType = INFRACTION_TYPES.map((t) => ({
-    tipo: t.label.split(" ")[0],
+    tipo: t.short,
     cantidad: infractions.filter((i) => i.tipo === t.code).length,
   }));
 
@@ -1431,6 +1341,7 @@ function Dashboard({ infractions, closures, operativos, accidents, impounded, zo
           Vista general de la actividad del módulo de Tránsito, Estacionamiento y Seguridad Vial.
         </p>
       </div>
+      <ResourceStatus resource={status} loadingText="Cargando indicadores..." />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard icon={FileWarning} label="Infracciones activas" value={activeInfractions} tone="red" />
         <StatCard icon={TrafficCone} label="Cortes de calle activos" value={activeClosures} tone="orange" />
@@ -1438,6 +1349,12 @@ function Dashboard({ infractions, closures, operativos, accidents, impounded, zo
         <StatCard icon={Car} label="Vehículos en depósito" value={inDeposit} tone="slate" />
         <StatCard icon={Siren} label="Accidentes abiertos" value={openAccidents} tone="amber" />
       </div>
+      {role === "ADMINISTRADOR" && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <StatCard icon={FileSignature} label="Descargos por resolver" value={appealedInfractions} tone="sky" />
+          <StatCard icon={TrafficCone} label="Cortes por evaluar" value={closuresToEvaluate} tone="amber" />
+        </div>
+      )}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-2">
           <p className="mb-4 text-sm font-semibold text-slate-700">Infracciones por tipo</p>
@@ -1452,16 +1369,17 @@ function Dashboard({ infractions, closures, operativos, accidents, impounded, zo
           </ResponsiveContainer>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-6">
-          <p className="mb-4 text-sm font-semibold text-slate-700">Ocupación estacionamiento medido</p>
+          <p className="mb-4 text-sm font-semibold text-slate-700">Sesiones de estacionamiento abiertas</p>
           <div className="space-y-4">
-            {zones.map((z) => (
+            {openSessionsByZone.length === 0 && <p className="text-xs text-slate-400">No hay zonas activas.</p>}
+            {openSessionsByZone.map((z) => (
               <div key={z.id}>
                 <div className="flex justify-between text-xs text-slate-500">
                   <span>{z.nombre}</span>
-                  <span>{z.ocupacion}%</span>
+                  <span>{z.abiertas}</span>
                 </div>
                 <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-slate-900" style={{ width: `${z.ocupacion}%` }} />
+                  <div className="h-full rounded-full bg-slate-900" style={{ width: `${(z.abiertas / maxOpenSessions) * 100}%` }} />
                 </div>
               </div>
             ))}
@@ -1475,11 +1393,14 @@ function Dashboard({ infractions, closures, operativos, accidents, impounded, zo
 function RegistrarInfraccionForm({ onSubmit }) {
   const [tipo, setTipo] = useState(INFRACTION_TYPES[0].code);
   const [patente, setPatente] = useState("");
+  const [dni, setDni] = useState("");
+  const [fechaHora, setFechaHora] = useState(nowForInput);
   const [calle, setCalle] = useState("");
   const [entrecalle, setEntrecalle] = useState("");
-  const [inspector, setInspector] = useState(INSPECTORS[0]);
   const [agravantes, setAgravantes] = useState([]);
   const [evidencia, setEvidencia] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const tipoObj = INFRACTION_TYPES.find((t) => t.code === tipo);
   const recargo = agravantes.reduce((acc, code) => acc + AGGRAVATING_FACTORS.find((a) => a.code === code).pct, 0);
@@ -1489,31 +1410,44 @@ function RegistrarInfraccionForm({ onSubmit }) {
     setAgravantes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!patente || !calle || !evidencia) return;
-    onSubmit({
-      id: `INF-${Math.floor(1000 + Math.random() * 9000)}`,
-      tipo,
-      tipoLabel: tipoObj.label,
-      patente: patente.toUpperCase(),
-      calle: entrecalle ? `${calle} y ${entrecalle}` : calle,
-      inspector,
-      monto,
-      estado: "Pendiente",
-      fecha: new Date().toLocaleString("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      evidencia,
-    });
+    if (!patente.trim() || !calle.trim() || !fechaHora) return;
+    setError("");
+    setSubmitting(true);
+    try {
+      // inspectorId no se manda: el backend lo toma del usuario logueado.
+      await onSubmit({
+        licensePlate: patente.trim().toUpperCase(),
+        infractionType: tipo,
+        infractionDateTime: fechaHora.length === 16 ? `${fechaHora}:00` : fechaHora,
+        location: { street: calle.trim(), crossStreet: entrecalle.trim() || null },
+        evidenceUrl: evidencia
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean),
+        offenderNationalId: dni.trim() || null,
+        baseAmount: tipoObj.base,
+        aggravatingFactors: agravantes,
+        finalAmount: monto,
+      });
+    } catch (err) {
+      setError(err.message || "No se pudo registrar la infracción.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit}>
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 p-4 text-sm">
+          <p className="flex items-center gap-2 font-semibold text-red-700">
+            <AlertCircle size={16} /> No se pudo registrar
+          </p>
+          <p className="mt-1 text-red-600">{error}</p>
+        </div>
+      )}
       <div className="grid gap-x-4 sm:grid-cols-2">
         <Field label="Tipo de infracción" required>
           <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={inputCls}>
@@ -1527,28 +1461,22 @@ function RegistrarInfraccionForm({ onSubmit }) {
         <Field label="Patente" required>
           <input value={patente} onChange={(e) => setPatente(e.target.value.toUpperCase())} placeholder="AB123CD" className={inputCls} />
         </Field>
+        <Field label="Fecha y hora del hecho" required>
+          <input type="datetime-local" value={fechaHora} max={nowForInput()} onChange={(e) => setFechaHora(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="DNI del infractor" hint="Opcional. Con el DNI el vecino ve el acta en su portal.">
+          <input value={dni} onChange={(e) => setDni(e.target.value)} inputMode="numeric" placeholder="30111222" className={inputCls} />
+        </Field>
         <Field label="Calle" required>
           <input value={calle} onChange={(e) => setCalle(e.target.value)} className={inputCls} />
         </Field>
         <Field label="Entre calle">
           <input value={entrecalle} onChange={(e) => setEntrecalle(e.target.value)} className={inputCls} />
         </Field>
-        <Field label="Inspector" required>
-          <select value={inspector} onChange={(e) => setInspector(e.target.value)} className={inputCls}>
-            {INSPECTORS.map((i) => (
-              <option key={i} value={i}>
-                {i}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Evidencia" required hint="Foto o video del hecho">
-          <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-sm text-slate-400 hover:border-slate-400">
-            {evidencia || "Adjuntar archivo"}
-            <input type="file" className="hidden" onChange={(e) => setEvidencia(e.target.files?.[0]?.name || "")} />
-          </label>
-        </Field>
       </div>
+      <Field label="Evidencia" hint="Opcional. Un enlace por línea (foto o video del hecho).">
+        <textarea value={evidencia} onChange={(e) => setEvidencia(e.target.value)} rows={2} placeholder="https://..." className={inputCls} />
+      </Field>
       <Field label="Agravantes">
         <div className="flex flex-wrap gap-2">
           {AGGRAVATING_FACTORS.map((a) => (
@@ -1570,19 +1498,47 @@ function RegistrarInfraccionForm({ onSubmit }) {
         <span className="text-sm text-slate-500">Importe calculado</span>
         <span className="text-lg font-bold text-slate-900">{formatCurrency(monto)}</span>
       </div>
-      <Button type="submit" variant="primary" className="mt-4 w-full">
-        Emitir acta de infracción
+      <Button type="submit" variant="primary" className="mt-4 w-full" disabled={submitting}>
+        {submitting ? "Registrando..." : "Emitir acta de infracción"}
       </Button>
     </form>
   );
 }
 
-function InfraccionesStaff({ infractions, onCreate, onResolve }) {
+function InfraccionesStaff({ infractions, resource, role, onCreate, onConfirm, onAnnul }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [detail, setDetail] = useState(null);
   const [filterEstado, setFilterEstado] = useState("Todos");
+  const [annulMode, setAnnulMode] = useState(false);
+  const [annulReason, setAnnulReason] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [acting, setActing] = useState(false);
+
+  // Permisos del backend: el inspector registra; el administrador confirma o anula.
+  const canRegister = role === "INSPECTOR";
+  const canResolve = role === "ADMINISTRADOR";
 
   const filtered = filterEstado === "Todos" ? infractions : infractions.filter((i) => i.estado === filterEstado);
+
+  const closeDetail = () => {
+    setDetail(null);
+    setAnnulMode(false);
+    setAnnulReason("");
+    setActionError("");
+  };
+
+  const run = async (action) => {
+    setActionError("");
+    setActing(true);
+    try {
+      await action();
+      closeDetail();
+    } catch (err) {
+      setActionError(err.message || "No se pudo completar la acción.");
+    } finally {
+      setActing(false);
+    }
+  };
 
   const columns = [
     { header: "Patente", render: (r) => <span className="font-mono font-semibold">{r.patente}</span> },
@@ -1593,15 +1549,19 @@ function InfraccionesStaff({ infractions, onCreate, onResolve }) {
     { header: "Estado", render: (r) => <Badge tone={INFRACCION_ESTADO[r.estado]}>{r.estado}</Badge> },
   ];
 
+  const canActOnDetail = canResolve && detail && (detail.estado === "Pendiente" || detail.estado === "Apelada");
+
   return (
     <div className="space-y-6">
       <SectionToolbar
         title="Gestión de infracciones"
-        desc="Registrá, consultá y resolvé infracciones de tránsito."
+        desc={canRegister ? "Registrá y consultá infracciones de tránsito." : "Consultá y resolvé infracciones de tránsito."}
         actions={
-          <Button variant="accent" onClick={() => setModalOpen(true)}>
-            <Plus size={16} /> Registrar infracción
-          </Button>
+          canRegister && (
+            <Button variant="accent" onClick={() => setModalOpen(true)}>
+              <Plus size={16} /> Registrar infracción
+            </Button>
+          )
         }
       />
       <div className="flex flex-wrap items-center gap-2">
@@ -1619,69 +1579,82 @@ function InfraccionesStaff({ infractions, onCreate, onResolve }) {
           </button>
         ))}
       </div>
-      <DataTable columns={columns} data={filtered} onRowClick={setDetail} />
+      <ResourceStatus resource={resource} loadingText="Cargando infracciones..." />
+      {resource.loaded && <DataTable columns={columns} data={filtered} onRowClick={setDetail} />}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Registrar infracción" wide>
         <RegistrarInfraccionForm
-          onSubmit={(data) => {
-            onCreate(data);
+          onSubmit={async (data) => {
+            await onCreate(data);
             setModalOpen(false);
           }}
         />
       </Modal>
 
-      <Modal open={!!detail} onClose={() => setDetail(null)} title="Detalle de infracción">
+      <Modal open={!!detail} onClose={closeDetail} title="Detalle de infracción">
         {detail && (
           <div>
             <dl className="space-y-3 text-sm">
               <Row label="Patente" value={detail.patente} />
               <Row label="Tipo" value={detail.tipoLabel} />
+              <Row label="Fecha y hora" value={detail.fecha} />
               <Row label="Ubicación" value={detail.calle} />
+              <Row label="DNI del infractor" value={detail.infractor || "—"} />
               <Row label="Inspector" value={detail.inspector} />
               <Row label="Importe" value={formatCurrency(detail.monto)} />
               <Row label="Estado" value={detail.estado} />
             </dl>
-            {detail.estado === "Apelada" && (
-              <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-sky-700">
-                <p className="font-semibold">Motivo del descargo</p>
-                <p className="mt-1">{detail.motivoDescargo}</p>
-                <p className="mt-3 text-xs text-sky-500">Requiere autorización de un rol superior para resolver.</p>
-                <div className="mt-3 flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="success"
-                    onClick={() => {
-                      onResolve(detail.id, "Anulada");
-                      setDetail(null);
-                    }}
-                  >
-                    Aceptar descargo
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    onClick={() => {
-                      onResolve(detail.id, "Confirmada");
-                      setDetail(null);
-                    }}
-                  >
-                    Rechazar descargo
-                  </Button>
-                </div>
+            {detail.evidencias.length > 0 && (
+              <div className="mt-4 text-sm">
+                <p className="font-medium text-slate-700">Evidencia</p>
+                <ul className="mt-1 space-y-1">
+                  {detail.evidencias.map((url) => (
+                    <li key={url}>
+                      <a href={url} target="_blank" rel="noreferrer" className="break-all text-sky-600 hover:underline">
+                        {url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
-            {detail.estado === "Pendiente" && (
-              <div className="mt-4">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    onResolve(detail.id, "Confirmada");
-                    setDetail(null);
-                  }}
-                >
-                  Marcar como firme
+            {detail.estado === "Apelada" && (
+              <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-sky-700">
+                <p className="font-semibold">El vecino presentó un descargo</p>
+                <p className="mt-1">{detail.motivoDescargo || "El texto del descargo no está disponible en esta vista."}</p>
+                {!canResolve && <p className="mt-3 text-xs text-sky-500">La resolución la realiza un administrador.</p>}
+              </div>
+            )}
+            {actionError && (
+              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-600">
+                <p className="flex items-center gap-2">
+                  <AlertCircle size={16} /> {actionError}
+                </p>
+              </div>
+            )}
+            {canActOnDetail && !annulMode && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button size="sm" variant={detail.estado === "Apelada" ? "danger" : "secondary"} disabled={acting} onClick={() => run(() => onConfirm(detail.id))}>
+                  {detail.estado === "Apelada" ? "Rechazar descargo (confirmar)" : "Marcar como firme"}
                 </Button>
+                <Button size="sm" variant={detail.estado === "Apelada" ? "success" : "danger"} disabled={acting} onClick={() => setAnnulMode(true)}>
+                  {detail.estado === "Apelada" ? "Aceptar descargo (anular)" : "Anular"}
+                </Button>
+              </div>
+            )}
+            {canActOnDetail && annulMode && (
+              <div className="mt-4">
+                <Field label="Motivo de la anulación" required hint={`${annulReason.length}/1000`}>
+                  <textarea value={annulReason} maxLength={1000} onChange={(e) => setAnnulReason(e.target.value)} rows={3} className={inputCls} />
+                </Field>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="danger" disabled={acting || !annulReason.trim()} onClick={() => run(() => onAnnul(detail.id, annulReason.trim()))}>
+                    {acting ? "Anulando..." : "Confirmar anulación"}
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={acting} onClick={() => setAnnulMode(false)}>
+                    Volver
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -1691,20 +1664,141 @@ function InfraccionesStaff({ infractions, onCreate, onResolve }) {
   );
 }
 
-function EvaluarCorteForm({ closure, onSubmit }) {
-  const [decision, setDecision] = useState("Aprobado");
-  const [desvios, setDesvios] = useState("");
-  const [condiciones, setCondiciones] = useState("");
-  const [motivo, setMotivo] = useState("");
+// ---------------------------------------------------------------------------
+// Panel interno: Cortes de calle, Operativos, Accidentes, Vehículos retenidos
+// y Estacionamiento medido. Datos reales del backend; cada acción se muestra
+// solo al rol que la puede hacer (igual que en la API).
+// ---------------------------------------------------------------------------
 
-  const handleSubmit = (e) => {
+/** Ejecuta una acción async y guarda "en curso" y el error para mostrarlo en pantalla. */
+function useAction() {
+  const [acting, setActing] = useState(false);
+  const [error, setError] = useState("");
+  const run = async (action, fallback = "No se pudo completar la acción.") => {
+    setError("");
+    setActing(true);
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      setError(err.message || fallback);
+      return false;
+    } finally {
+      setActing(false);
+    }
+  };
+  return { run, acting, error, setError };
+}
+
+function ErrorNote({ title, children }) {
+  if (!children) return null;
+  return (
+    <div className="mb-4 rounded-xl border border-red-100 bg-red-50 p-4 text-sm">
+      {title && (
+        <p className="flex items-center gap-2 font-semibold text-red-700">
+          <AlertCircle size={16} /> {title}
+        </p>
+      )}
+      <p className={cx("text-red-600", title && "mt-1")}>{children}</p>
+    </div>
+  );
+}
+
+const linesOf = (text) =>
+  text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+// Valor de <input type="datetime-local"> -> LocalDateTime del backend (con segundos).
+const toApiDateTime = (value) => (value.length === 16 ? `${value}:00` : value);
+
+// Valor de <input type="datetime-local"> -> OffsetDateTime del backend, con el offset de la
+// zona horaria del navegador (ej. "2026-10-20T08:00:00-03:00"). Vacío -> null.
+const toApiOffsetDateTime = (value) => {
+  if (!value) return null;
+  const d = new Date(value); // sin zona explícita el navegador lo interpreta como hora local
+  if (Number.isNaN(d.getTime())) return null;
+  const offset = -d.getTimezoneOffset();
+  const abs = Math.abs(offset);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${toApiDateTime(value)}${offset >= 0 ? "+" : "-"}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+};
+
+// Fecha ISO del backend (con offset) -> valor de <input type="datetime-local"> en hora local.
+const isoToInput = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// ----- Cortes de calle -----
+
+const CLOSURE_STATUS_STAFF = {
+  REQUESTED: "Pendiente",
+  APPROVED: "Aprobado",
+  REJECTED: "Rechazado",
+  ACTIVE: "Activo",
+  FINISHED: "Finalizado",
+  EXPIRED: "Vencido",
+};
+
+function mapApiClosure(api) {
+  return {
+    id: api.streetClosureId,
+    solicitante: REQUESTING_MODULE_LABEL[api.requestingModule] || api.requestingModule,
+    calle: (api.affectedStreet || []).join(", "),
+    fechaInicio: formatDateTime(api.startDate),
+    fechaFin: formatDateTime(api.endDate),
+    // Fechas originales (ISO con offset): sirven para precargar la ventana autorizada.
+    inicioISO: api.startDate,
+    finISO: api.endDate,
+    estado: CLOSURE_STATUS_STAFF[api.status] || api.status,
+    desvios: api.detours || [],
+    condiciones: api.conditions || [],
+  };
+}
+
+function EvaluarCorteForm({ closure, onApprove, onReject, onDone }) {
+  const [decision, setDecision] = useState("Aprobado");
+  const [detours, setDetours] = useState([{ street: "", alternateRoute: "" }]);
+  const [condiciones, setCondiciones] = useState("");
+  // Ventana autorizada: arranca con la solicitada. Si no se modifica se manda null y el
+  // backend conserva la ventana recibida; authorizedTo es el fin operativo (cierre automático).
+  const initialFrom = isoToInput(closure.inicioISO);
+  const initialTo = isoToInput(closure.finISO);
+  const [authFrom, setAuthFrom] = useState(initialFrom);
+  const [authTo, setAuthTo] = useState(initialTo);
+  const [motivo, setMotivo] = useState("");
+  const { run, acting, error } = useAction();
+
+  const setDetour = (i, key, value) => setDetours((prev) => prev.map((d, idx) => (idx === i ? { ...d, [key]: value } : d)));
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit({
-      estado: decision,
-      desvios: desvios ? desvios.split(",").map((s) => s.trim()) : [],
-      condiciones,
-      rejectionReason: motivo,
+    const ok = await run(async () => {
+      if (decision === "Rechazado") return onReject(closure.id, motivo.trim());
+      const clean = detours
+        .map((d) => ({ street: d.street.trim(), alternateRoute: d.alternateRoute.trim() }))
+        .filter((d) => d.street || d.alternateRoute);
+      if (clean.some((d) => !d.street || !d.alternateRoute)) {
+        throw new Error("Completá la calle y la ruta alternativa de cada desvío.");
+      }
+      const effectiveFrom = authFrom || initialFrom;
+      const effectiveTo = authTo || initialTo;
+      if (effectiveFrom && effectiveTo && effectiveTo <= effectiveFrom) {
+        throw new Error("El fin autorizado tiene que ser posterior al inicio autorizado.");
+      }
+      return onApprove(closure.id, {
+        detours: clean,
+        conditions: linesOf(condiciones),
+        authorizedFrom: authFrom && authFrom !== initialFrom ? toApiOffsetDateTime(authFrom) : null,
+        authorizedTo: authTo && authTo !== initialTo ? toApiOffsetDateTime(authTo) : null,
+      });
     });
+    if (ok) onDone();
   };
 
   return (
@@ -1715,6 +1809,7 @@ function EvaluarCorteForm({ closure, onSubmit }) {
           Solicitado por {closure.solicitante} · {closure.fechaInicio} — {closure.fechaFin}
         </p>
       </div>
+      <ErrorNote title="No se pudo registrar la decisión">{error}</ErrorNote>
       <Field label="Decisión">
         <div className="flex gap-2">
           <button
@@ -1741,27 +1836,64 @@ function EvaluarCorteForm({ closure, onSubmit }) {
       </Field>
       {decision === "Aprobado" ? (
         <>
-          <Field label="Desvíos sugeridos" hint="Separados por coma">
-            <input value={desvios} onChange={(e) => setDesvios(e.target.value)} className={inputCls} placeholder="Av. Rivadavia, Calle San Martín" />
+          <Field label="Desvíos" hint="Opcional. Calle desviada y ruta alternativa.">
+            <div className="space-y-2">
+              {detours.map((d, i) => (
+                <div key={i} className="flex gap-2">
+                  <input value={d.street} onChange={(e) => setDetour(i, "street", e.target.value)} placeholder="Calle desviada" className={inputCls} />
+                  <input
+                    value={d.alternateRoute}
+                    onChange={(e) => setDetour(i, "alternateRoute", e.target.value)}
+                    placeholder="Ruta alternativa"
+                    className={inputCls}
+                  />
+                </div>
+              ))}
+            </div>
+            <Button type="button" variant="ghost" size="sm" className="mt-2" onClick={() => setDetours((p) => [...p, { street: "", alternateRoute: "" }])}>
+              <Plus size={14} /> Agregar desvío
+            </Button>
           </Field>
-          <Field label="Condiciones">
+          <Field label="Condiciones" hint="Opcional. Una por línea.">
             <textarea value={condiciones} onChange={(e) => setCondiciones(e.target.value)} rows={3} className={inputCls} />
           </Field>
+          <div className="grid gap-x-4 sm:grid-cols-2">
+            <Field label="Inicio autorizado" hint="Viene con el inicio solicitado; cambialo solo si autorizás otro.">
+              <input type="datetime-local" value={authFrom} onChange={(e) => setAuthFrom(e.target.value)} className={inputCls} />
+            </Field>
+            <Field label="Fin autorizado" hint="Fin operativo: al vencer, el corte se cierra automáticamente.">
+              <input type="datetime-local" value={authTo} min={authFrom || undefined} onChange={(e) => setAuthTo(e.target.value)} className={inputCls} />
+            </Field>
+          </div>
         </>
       ) : (
-        <Field label="Motivo del rechazo" required>
-          <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} required className={inputCls} />
+        <Field label="Motivo del rechazo" required hint={`${motivo.length}/1000`}>
+          <textarea value={motivo} maxLength={1000} onChange={(e) => setMotivo(e.target.value)} rows={3} className={inputCls} />
         </Field>
       )}
-      <Button type="submit" variant="primary" className="mt-2 w-full">
-        Confirmar decisión
+      <Button type="submit" variant="primary" className="mt-2 w-full" disabled={acting || (decision === "Rechazado" && !motivo.trim())}>
+        {acting ? "Enviando..." : "Confirmar decisión"}
       </Button>
     </form>
   );
 }
 
-function CortesDeCalleStaff({ closures, onEvaluate, onActivate, onExtend, onFinish }) {
+function CortesDeCalleStaff({ closures, resource, role, onApprove, onReject, onActivate, onComplete }) {
   const [evalTarget, setEvalTarget] = useState(null);
+  const [finishTarget, setFinishTarget] = useState(null);
+  const [notes, setNotes] = useState("");
+  const page = useAction();
+  const finish = useAction();
+
+  // Permisos del backend: el administrador aprueba o rechaza; el inspector activa y finaliza.
+  const isAdmin = role === "ADMINISTRADOR";
+  const isInspector = role === "INSPECTOR";
+
+  const closeFinish = () => {
+    setFinishTarget(null);
+    setNotes("");
+    finish.setError("");
+  };
 
   const columns = [
     { header: "Solicitante", render: (r) => <Badge tone={r.solicitante === "Obras" ? "orange" : "emerald"}>{r.solicitante}</Badge> },
@@ -1773,25 +1905,20 @@ function CortesDeCalleStaff({ closures, onEvaluate, onActivate, onExtend, onFini
       header: "Acciones",
       render: (r) => (
         <div className="flex gap-2">
-          {r.estado === "Pendiente" && (
+          {isAdmin && r.estado === "Pendiente" && (
             <Button size="sm" variant="secondary" onClick={() => setEvalTarget(r)}>
               Evaluar
             </Button>
           )}
-          {r.estado === "Aprobado" && (
-            <Button size="sm" variant="secondary" onClick={() => onActivate(r.id)}>
+          {isInspector && r.estado === "Aprobado" && (
+            <Button size="sm" variant="secondary" disabled={page.acting} onClick={() => page.run(() => onActivate(r.id))}>
               Activar
             </Button>
           )}
-          {r.estado === "Activo" && (
-            <>
-              <Button size="sm" variant="secondary" onClick={() => onExtend(r.id)}>
-                Extender
-              </Button>
-              <Button size="sm" variant="danger" onClick={() => onFinish(r.id)}>
-                Finalizar
-              </Button>
-            </>
+          {isInspector && r.estado === "Activo" && (
+            <Button size="sm" variant="danger" onClick={() => setFinishTarget(r)}>
+              Finalizar
+            </Button>
           )}
         </div>
       ),
@@ -1800,54 +1927,123 @@ function CortesDeCalleStaff({ closures, onEvaluate, onActivate, onExtend, onFini
 
   return (
     <div className="space-y-6">
-      <SectionToolbar title="Cortes de calle" desc="Solicitudes recibidas desde los módulos de Obras Públicas y Ambiente." />
-      <DataTable columns={columns} data={closures} />
+      <SectionToolbar
+        title="Cortes de calle"
+        desc={
+          isAdmin
+            ? "Evaluá las solicitudes recibidas desde los módulos de Obras Públicas y Ambiente."
+            : "Activá y finalizá los cortes de calle aprobados."
+        }
+      />
+      <ErrorNote title="No se pudo completar la acción">{page.error}</ErrorNote>
+      <ResourceStatus resource={resource} loadingText="Cargando cortes de calle..." />
+      {resource.loaded && <DataTable columns={columns} data={closures} />}
+
       <Modal open={!!evalTarget} onClose={() => setEvalTarget(null)} title="Evaluar solicitud de corte">
-        {evalTarget && (
-          <EvaluarCorteForm
-            closure={evalTarget}
-            onSubmit={(payload) => {
-              onEvaluate(evalTarget.id, payload);
-              setEvalTarget(null);
-            }}
-          />
+        {evalTarget && <EvaluarCorteForm closure={evalTarget} onApprove={onApprove} onReject={onReject} onDone={() => setEvalTarget(null)} />}
+      </Modal>
+
+      <Modal open={!!finishTarget} onClose={closeFinish} title="Finalizar corte de calle">
+        {finishTarget && (
+          <div>
+            <div className="mb-4 rounded-lg bg-slate-50 p-4 text-sm">
+              <p className="font-semibold text-slate-800">{finishTarget.calle}</p>
+              <p className="text-slate-500">Solicitado por {finishTarget.solicitante}</p>
+            </div>
+            <ErrorNote title="No se pudo finalizar">{finish.error}</ErrorNote>
+            <Field label="Observaciones de la finalización" required>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={inputCls} />
+            </Field>
+            <Button
+              variant="danger"
+              className="w-full"
+              disabled={finish.acting || !notes.trim()}
+              onClick={async () => {
+                if (await finish.run(() => onComplete(finishTarget.id, notes.trim()))) closeFinish();
+              }}
+            >
+              {finish.acting ? "Finalizando..." : "Finalizar corte"}
+            </Button>
+          </div>
         )}
       </Modal>
     </div>
   );
 }
 
-function CrearOperativoForm({ onSubmit }) {
-  const [tipo, setTipo] = useState("Control de alcoholemia");
+// ----- Operativos -----
+
+const OPERATION_TYPES = [
+  { code: "ROUTINE_CONTROL", label: "Control de rutina" },
+  { code: "COMPLAINT_VERIFICATION", label: "Verificación de denuncia" },
+  { code: "SAFETY_INSPECTION", label: "Inspección de seguridad" },
+];
+const OPERATION_TYPE_LABEL = Object.fromEntries(OPERATION_TYPES.map((t) => [t.code, t.label]));
+const OPERATION_RESOLUTIONS = [
+  { code: "INFRACTION_CREATED", label: "Se generó una infracción" },
+  { code: "ACCIDENT_REGISTERED", label: "Se registró un accidente" },
+  { code: "NO_ACTION", label: "Sin novedades" },
+];
+const OPERATION_RESOLUTION_LABEL = Object.fromEntries(OPERATION_RESOLUTIONS.map((r) => [r.code, r.label]));
+const OPERATION_STATUS_UI = {
+  OPEN: { label: "Abierto", tone: "amber" },
+  CLOSED: { label: "Cerrado", tone: "emerald" },
+};
+
+function mapApiOperation(api) {
+  return {
+    id: api.operationId,
+    tipo: OPERATION_TYPE_LABEL[api.type] || api.type,
+    zona: api.zone,
+    inicio: formatDateTime(api.startDateTime),
+    fin: api.endDateTime ? formatDateTime(api.endDateTime) : "—",
+    inspectores: api.assignedInspectors || [],
+    moviles: api.assignedUnits || [],
+    status: api.status,
+    resolucion: api.resolution ? OPERATION_RESOLUTION_LABEL[api.resolution] || api.resolution : null,
+  };
+}
+
+function CrearOperativoForm({ onSubmit, onDone }) {
+  const [tipo, setTipo] = useState(OPERATION_TYPES[0].code);
   const [zona, setZona] = useState("");
-  const [fecha, setFecha] = useState("");
-  const [hora, setHora] = useState("");
+  const [inicio, setInicio] = useState(nowForInput);
+  const [fin, setFin] = useState("");
   const [inspectores, setInspectores] = useState([]);
   const [moviles, setMoviles] = useState("");
+  const { run, acting, error } = useAction();
 
   const toggleInsp = (name) => setInspectores((prev) => (prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!zona || !fecha || inspectores.length === 0) return;
-    onSubmit({
-      id: `OP-${Math.floor(100 + Math.random() * 900)}`,
-      tipo,
-      zona,
-      fecha,
-      hora,
-      inspectores,
-      moviles: moviles || "—",
-      controles: 0,
-    });
+    if (!zona.trim() || !inicio || inspectores.length === 0) return;
+    const ok = await run(() =>
+      onSubmit({
+        type: tipo,
+        zone: zona.trim(),
+        startDateTime: toApiDateTime(inicio),
+        endDateTime: fin ? toApiDateTime(fin) : null,
+        assignedInspectors: inspectores,
+        assignedUnits: moviles
+          .split(",")
+          .map((m) => m.trim())
+          .filter(Boolean),
+        ticketId: null,
+      })
+    );
+    if (ok) onDone();
   };
 
   return (
     <form onSubmit={handleSubmit}>
+      <ErrorNote title="No se pudo crear el operativo">{error}</ErrorNote>
       <Field label="Tipo de operativo">
         <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={inputCls}>
-          {["Control de alcoholemia", "Control documentación", "Operativo de velocidad", "Control de estacionamiento"].map((t) => (
-            <option key={t}>{t}</option>
+          {OPERATION_TYPES.map((t) => (
+            <option key={t.code} value={t.code}>
+              {t.label}
+            </option>
           ))}
         </select>
       </Field>
@@ -1855,14 +2051,14 @@ function CrearOperativoForm({ onSubmit }) {
         <Field label="Zona" required>
           <input value={zona} onChange={(e) => setZona(e.target.value)} className={inputCls} />
         </Field>
-        <Field label="Móviles asignados">
+        <Field label="Móviles asignados" hint="Separados por coma.">
           <input value={moviles} onChange={(e) => setMoviles(e.target.value)} placeholder="M-04, M-11" className={inputCls} />
         </Field>
-        <Field label="Fecha" required>
-          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inputCls} />
+        <Field label="Inicio" required>
+          <input type="datetime-local" value={inicio} onChange={(e) => setInicio(e.target.value)} className={inputCls} />
         </Field>
-        <Field label="Horario">
-          <input type="time" value={hora} onChange={(e) => setHora(e.target.value)} className={inputCls} />
+        <Field label="Fin" hint="Opcional.">
+          <input type="datetime-local" value={fin} onChange={(e) => setFin(e.target.value)} className={inputCls} />
         </Field>
       </div>
       <Field label="Inspectores asignados" required>
@@ -1882,107 +2078,211 @@ function CrearOperativoForm({ onSubmit }) {
           ))}
         </div>
       </Field>
-      <Button type="submit" variant="primary" className="mt-2 w-full">
-        Crear operativo
+      <Button type="submit" variant="primary" className="mt-2 w-full" disabled={acting}>
+        {acting ? "Creando..." : "Crear operativo"}
       </Button>
     </form>
   );
 }
 
-function OperativosStaff({ operativos, onCreate }) {
+function OperativosStaff({ operativos, resource, role, onCreate, onClose }) {
   const [open, setOpen] = useState(false);
+  const [closeTarget, setCloseTarget] = useState(null);
+  const [resolution, setResolution] = useState(OPERATION_RESOLUTIONS[0].code);
+  const closing = useAction();
+
+  // El backend deja crear y cerrar operativos solo al inspector.
+  const canOperate = role === "INSPECTOR";
+
+  const dismissClose = () => {
+    setCloseTarget(null);
+    closing.setError("");
+  };
+
   const columns = [
     { header: "Tipo", render: (r) => r.tipo },
     { header: "Zona", render: (r) => r.zona },
-    { header: "Fecha", render: (r) => `${r.fecha} ${r.hora}` },
-    { header: "Inspectores", render: (r) => r.inspectores.join(", ") },
-    { header: "Móviles", render: (r) => r.moviles },
-    { header: "Controles", render: (r) => r.controles },
+    { header: "Inicio", render: (r) => r.inicio },
+    { header: "Fin", render: (r) => r.fin },
+    { header: "Inspectores", render: (r) => r.inspectores.join(", ") || "—" },
+    { header: "Móviles", render: (r) => r.moviles.join(", ") || "—" },
+    {
+      header: "Estado",
+      render: (r) => (
+        <div>
+          <Badge tone={OPERATION_STATUS_UI[r.status]?.tone}>{OPERATION_STATUS_UI[r.status]?.label || r.status}</Badge>
+          {r.resolucion && <p className="mt-1 text-xs text-slate-500">{r.resolucion}</p>}
+        </div>
+      ),
+    },
+    // Solo el inspector cierra operativos: para el administrador la pantalla es de consulta.
+    ...(canOperate
+      ? [
+          {
+            header: "Acciones",
+            render: (r) =>
+              r.status === "OPEN" ? (
+                <Button size="sm" variant="secondary" onClick={() => setCloseTarget(r)}>
+                  Cerrar
+                </Button>
+              ) : null,
+          },
+        ]
+      : []),
   ];
+
   return (
     <div className="space-y-6">
       <SectionToolbar
         title="Operativos de tránsito"
-        desc="Planificación y seguimiento de operativos en la vía pública."
+        desc={canOperate ? "Planificación y seguimiento de operativos en la vía pública." : "Consulta de operativos en la vía pública (solo lectura)."}
         actions={
-          <Button variant="accent" onClick={() => setOpen(true)}>
-            <Plus size={16} /> Nuevo operativo
-          </Button>
+          canOperate && (
+            <Button variant="accent" onClick={() => setOpen(true)}>
+              <Plus size={16} /> Nuevo operativo
+            </Button>
+          )
         }
       />
-      <DataTable columns={columns} data={operativos} />
+      <ResourceStatus resource={resource} loadingText="Cargando operativos..." />
+      {resource.loaded && <DataTable columns={columns} data={operativos} />}
+
       <Modal open={open} onClose={() => setOpen(false)} title="Crear operativo">
-        <CrearOperativoForm
-          onSubmit={(data) => {
-            onCreate(data);
-            setOpen(false);
-          }}
-        />
+        <CrearOperativoForm onSubmit={onCreate} onDone={() => setOpen(false)} />
+      </Modal>
+
+      <Modal open={!!closeTarget} onClose={dismissClose} title="Cerrar operativo">
+        {closeTarget && (
+          <div>
+            <div className="mb-4 rounded-lg bg-slate-50 p-4 text-sm">
+              <p className="font-semibold text-slate-800">
+                {closeTarget.tipo} · {closeTarget.zona}
+              </p>
+              <p className="text-slate-500">{closeTarget.inicio}</p>
+            </div>
+            <ErrorNote title="No se pudo cerrar">{closing.error}</ErrorNote>
+            <Field label="Resultado del operativo" required>
+              <select value={resolution} onChange={(e) => setResolution(e.target.value)} className={inputCls}>
+                {OPERATION_RESOLUTIONS.map((r) => (
+                  <option key={r.code} value={r.code}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Button
+              variant="primary"
+              className="w-full"
+              disabled={closing.acting}
+              onClick={async () => {
+                if (await closing.run(() => onClose(closeTarget.id, resolution))) dismissClose();
+              }}
+            >
+              {closing.acting ? "Cerrando..." : "Cerrar operativo"}
+            </Button>
+          </div>
+        )}
       </Modal>
     </div>
   );
 }
 
-function CrearAccidenteForm({ onSubmit }) {
-  const [ubicacion, setUbicacion] = useState("");
-  const [fecha, setFecha] = useState("");
+// ----- Accidentes -----
+
+const INJURY_OPTIONS = [
+  { code: "NONE", label: "Sin lesión" },
+  { code: "MINOR", label: "Leve" },
+  { code: "SEVERE", label: "Grave" },
+];
+const INJURY_OPTION_LABEL = Object.fromEntries(INJURY_OPTIONS.map((o) => [o.code, o.label.toLowerCase()]));
+
+function mapApiAccident(api) {
+  return {
+    id: api.accidentId,
+    fecha: formatDateTime(api.accidentDateTime),
+    ubicacion: [api.location?.street, api.location?.crossStreet].filter(Boolean).join(" y "),
+    personas: api.persons || [],
+    vehiculos: api.vehicles || [],
+    danosInfraestructura: !!api.involvesInfrastructureDamage,
+    danoDesc: api.damageDescription,
+    status: api.status,
+  };
+}
+
+function CrearAccidenteForm({ onSubmit, onDone }) {
+  const [calle, setCalle] = useState("");
+  const [entrecalle, setEntrecalle] = useState("");
+  const [fecha, setFecha] = useState(nowForInput);
   const [danos, setDanos] = useState(false);
   const [danoDesc, setDanoDesc] = useState("");
   const [personas, setPersonas] = useState([]);
   const [vehiculos, setVehiculos] = useState([]);
-  const [nombrePersona, setNombrePersona] = useState("");
-  const [lesion, setLesion] = useState("none");
+  const [dniPersona, setDniPersona] = useState("");
+  const [lesion, setLesion] = useState("NONE");
   const [patenteVeh, setPatenteVeh] = useState("");
+  const [titularVeh, setTitularVeh] = useState("");
+  const { run, acting, error } = useAction();
+
+  const pendingPersona = () => (dniPersona.trim() ? [{ nationalId: dniPersona.trim(), injuryLevel: lesion }] : []);
+  const pendingVehiculo = () =>
+    patenteVeh.trim() ? [{ licensePlate: patenteVeh.trim().toUpperCase(), ownerNationalId: titularVeh.trim() || null }] : [];
 
   const addPersona = () => {
-    if (!nombrePersona) return;
-    setPersonas((p) => [...p, { nombre: nombrePersona, lesion }]);
-    setNombrePersona("");
-    setLesion("none");
+    setPersonas((p) => [...p, ...pendingPersona()]);
+    setDniPersona("");
+    setLesion("NONE");
   };
   const addVehiculo = () => {
-    if (!patenteVeh) return;
-    setVehiculos((v) => [...v, { patente: patenteVeh }]);
+    setVehiculos((v) => [...v, ...pendingVehiculo()]);
     setPatenteVeh("");
+    setTitularVeh("");
   };
 
-  const lesionLabel = { none: "sin lesión", minor: "leve", severe: "grave" };
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!ubicacion || !fecha) return;
-    onSubmit({
-      id: `ACC-${Math.floor(1000 + Math.random() * 9000)}`,
-      ubicacion,
-      fecha,
-      personas,
-      vehiculos,
-      danosInfraestructura: danos,
-      danoDesc,
-      estado: "Abierto",
+    if (!calle.trim() || !fecha) return;
+    const ok = await run(async () => {
+      if (danos && !danoDesc.trim()) throw new Error("Describí los daños a la infraestructura.");
+      // inspectorId no se manda: el backend lo toma del usuario logueado.
+      return onSubmit({
+        accidentDateTime: toApiDateTime(fecha),
+        location: { street: calle.trim(), crossStreet: entrecalle.trim() || null },
+        involvesInfrastructureDamage: danos,
+        damageDescription: danos ? danoDesc.trim() : null,
+        vehicles: [...vehiculos, ...pendingVehiculo()],
+        persons: [...personas, ...pendingPersona()],
+        originTicketId: null,
+      });
     });
+    if (ok) onDone();
   };
 
   return (
     <form onSubmit={handleSubmit}>
+      <ErrorNote title="No se pudo registrar el accidente">{error}</ErrorNote>
       <div className="grid gap-x-4 sm:grid-cols-2">
-        <Field label="Ubicación" required>
-          <input value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} className={inputCls} />
+        <Field label="Calle" required>
+          <input value={calle} onChange={(e) => setCalle(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Entre calle">
+          <input value={entrecalle} onChange={(e) => setEntrecalle(e.target.value)} className={inputCls} />
         </Field>
         <Field label="Fecha y hora" required>
-          <input type="datetime-local" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inputCls} />
+          <input type="datetime-local" value={fecha} max={nowForInput()} onChange={(e) => setFecha(e.target.value)} className={inputCls} />
         </Field>
       </div>
 
-      <Field label="Personas involucradas">
+      <Field label="Personas involucradas" hint="DNI y nivel de lesión.">
         <div className="flex gap-2">
-          <input value={nombrePersona} onChange={(e) => setNombrePersona(e.target.value)} placeholder="Nombre" className={inputCls} />
-          <select value={lesion} onChange={(e) => setLesion(e.target.value)} className={cx(inputCls, "w-32")}>
-            <option value="none">Sin lesión</option>
-            <option value="minor">Leve</option>
-            <option value="severe">Grave</option>
+          <input value={dniPersona} onChange={(e) => setDniPersona(e.target.value)} inputMode="numeric" placeholder="DNI" className={inputCls} />
+          <select value={lesion} onChange={(e) => setLesion(e.target.value)} className={cx(inputCls, "w-36")}>
+            {INJURY_OPTIONS.map((o) => (
+              <option key={o.code} value={o.code}>
+                {o.label}
+              </option>
+            ))}
           </select>
-          <Button type="button" variant="secondary" onClick={addPersona}>
+          <Button type="button" variant="secondary" aria-label="Agregar persona" onClick={addPersona}>
             <Plus size={14} />
           </Button>
         </div>
@@ -1990,24 +2290,28 @@ function CrearAccidenteForm({ onSubmit }) {
           <ul className="mt-2 space-y-1 text-xs text-slate-500">
             {personas.map((p, i) => (
               <li key={i}>
-                · {p.nombre} — {lesionLabel[p.lesion]}
+                · DNI {p.nationalId} — {INJURY_OPTION_LABEL[p.injuryLevel]}
               </li>
             ))}
           </ul>
         )}
       </Field>
 
-      <Field label="Vehículos involucrados">
+      <Field label="Vehículos involucrados" hint="Patente y, si se conoce, DNI del titular.">
         <div className="flex gap-2">
           <input value={patenteVeh} onChange={(e) => setPatenteVeh(e.target.value.toUpperCase())} placeholder="Patente" className={inputCls} />
-          <Button type="button" variant="secondary" onClick={addVehiculo}>
+          <input value={titularVeh} onChange={(e) => setTitularVeh(e.target.value)} inputMode="numeric" placeholder="DNI titular" className={inputCls} />
+          <Button type="button" variant="secondary" aria-label="Agregar vehículo" onClick={addVehiculo}>
             <Plus size={14} />
           </Button>
         </div>
         {vehiculos.length > 0 && (
           <ul className="mt-2 space-y-1 text-xs text-slate-500">
             {vehiculos.map((v, i) => (
-              <li key={i}>· {v.patente}</li>
+              <li key={i}>
+                · {v.licensePlate}
+                {v.ownerNationalId ? ` — titular DNI ${v.ownerNationalId}` : ""}
+              </li>
             ))}
           </ul>
         )}
@@ -2018,203 +2322,409 @@ function CrearAccidenteForm({ onSubmit }) {
         Involucra daños a infraestructura pública
       </label>
       {danos && (
-        <Field label="Descripción de los daños">
+        <Field label="Descripción de los daños" required>
           <textarea value={danoDesc} onChange={(e) => setDanoDesc(e.target.value)} rows={3} className={inputCls} />
         </Field>
       )}
 
-      <Button type="submit" variant="primary" className="mt-2 w-full">
-        Registrar accidente
+      <Button type="submit" variant="primary" className="mt-2 w-full" disabled={acting}>
+        {acting ? "Registrando..." : "Registrar accidente"}
       </Button>
     </form>
   );
 }
 
-function AccidentesStaff({ accidents, onCreate, onClose }) {
+function AccidentesStaff({ accidents, resource, role, onCreate, onVerify }) {
   const [open, setOpen] = useState(false);
+  const page = useAction();
+
+  // El backend deja registrar y verificar accidentes solo al inspector.
+  const canOperate = role === "INSPECTOR";
+
   const columns = [
     { header: "Fecha", render: (r) => r.fecha },
     { header: "Ubicación", render: (r) => r.ubicacion },
     { header: "Personas", render: (r) => r.personas.length },
     { header: "Vehículos", render: (r) => r.vehiculos.length },
     { header: "Infraestructura", render: (r) => (r.danosInfraestructura ? <Badge tone="red">Sí</Badge> : <Badge tone="slate">No</Badge>) },
-    { header: "Estado", render: (r) => <Badge tone={ACCIDENTE_ESTADO[r.estado]}>{r.estado}</Badge> },
-    {
-      header: "Acciones",
-      render: (r) =>
-        r.estado === "Abierto" ? (
-          <Button size="sm" variant="secondary" onClick={() => onClose(r.id)}>
-            Cerrar
-          </Button>
-        ) : null,
-    },
+    { header: "Estado", render: (r) => <Badge tone={ACCIDENT_STATUS_UI[r.status]?.tone}>{ACCIDENT_STATUS_UI[r.status]?.label || r.status}</Badge> },
+    // Solo el inspector verifica accidentes: para el administrador la pantalla es de consulta.
+    ...(canOperate
+      ? [
+          {
+            header: "Acciones",
+            render: (r) =>
+              r.status === "PRELIMINARY" ? (
+                <Button size="sm" variant="secondary" disabled={page.acting} onClick={() => page.run(() => onVerify(r.id))}>
+                  Verificar
+                </Button>
+              ) : null,
+          },
+        ]
+      : []),
   ];
   return (
     <div className="space-y-6">
       <SectionToolbar
         title="Accidentes viales"
-        desc="Registro y seguimiento de siniestros de tránsito."
+        desc={canOperate ? "Registro y seguimiento de siniestros de tránsito." : "Consulta de siniestros de tránsito (solo lectura)."}
         actions={
-          <Button variant="accent" onClick={() => setOpen(true)}>
-            <Plus size={16} /> Registrar accidente
-          </Button>
+          canOperate && (
+            <Button variant="accent" onClick={() => setOpen(true)}>
+              <Plus size={16} /> Registrar accidente
+            </Button>
+          )
         }
       />
-      <DataTable columns={columns} data={accidents} />
+      <ErrorNote title="No se pudo completar la acción">{page.error}</ErrorNote>
+      <ResourceStatus resource={resource} loadingText="Cargando accidentes..." />
+      {resource.loaded && <DataTable columns={columns} data={accidents} />}
       <Modal open={open} onClose={() => setOpen(false)} title="Registrar accidente vial" wide>
-        <CrearAccidenteForm
-          onSubmit={(data) => {
-            onCreate(data);
-            setOpen(false);
-          }}
-        />
+        <CrearAccidenteForm onSubmit={onCreate} onDone={() => setOpen(false)} />
       </Modal>
     </div>
   );
 }
 
-function IngresoVehiculoForm({ onSubmit }) {
-  const [patente, setPatente] = useState("");
-  const [motivo, setMotivo] = useState("");
-  const [deposito, setDeposito] = useState("Depósito Norte");
-  const [origen, setOrigen] = useState("infraction");
+// ----- Vehículos retenidos -----
 
-  const handleSubmit = (e) => {
+const DEPOTS = ["Depósito Norte", "Depósito Sur", "Depósito Central"];
+// Valores de referencia que ya traía el mock: el backend solo guarda el costo total que se informa al liberar.
+const ACARREO_BASE = 25000;
+const ESTADIA_DIARIA = 3000;
+
+function suggestFee(entryDateTime) {
+  const days = Math.max(1, Math.ceil((Date.now() - new Date(entryDateTime).getTime()) / 86400000) || 1);
+  return { days, total: ACARREO_BASE + ESTADIA_DIARIA * days };
+}
+
+function mapApiImpoundment(api) {
+  return {
+    id: api.impoundmentId,
+    patente: api.licensePlate,
+    titular: api.ownerNationalId,
+    motivo: api.reason,
+    deposito: api.depotLocation,
+    origen: IMPOUNDMENT_ORIGIN_LABEL[api.originType] || api.originType,
+    originId: api.originId,
+    ingresoISO: api.entryDateTime,
+    fechaIngreso: formatDateTime(api.entryDateTime),
+    estado: IMPOUNDMENT_STATUS_UI[api.status]?.label || api.status,
+    requisitos: api.verifiedRequirements || [],
+    costo: api.towingAndStorageFee,
+    referenciaPago: api.paymentReference,
+    liberadoPor: api.releasedBy,
+  };
+}
+
+function IngresoVehiculoForm({ infractions, operations, onSubmit, onDone }) {
+  const [origen, setOrigen] = useState("INFRACTION");
+  const [originId, setOriginId] = useState("");
+  const [patente, setPatente] = useState("");
+  const [dni, setDni] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [deposito, setDeposito] = useState(DEPOTS[0]);
+  const [ingreso, setIngreso] = useState(nowForInput);
+  const { run, acting, error } = useAction();
+
+  const options =
+    origen === "INFRACTION"
+      ? infractions.map((i) => ({ id: i.id, label: `${i.patente} · ${i.tipoLabel} · ${i.fecha}` }))
+      : operations.map((o) => ({ id: o.id, label: `${o.tipo} · ${o.zona} · ${o.inicio}` }));
+
+  const switchOrigen = (value) => {
+    setOrigen(value);
+    setOriginId("");
+  };
+  const pickOrigin = (id) => {
+    setOriginId(id);
+    if (origen === "INFRACTION") {
+      const inf = infractions.find((i) => i.id === id);
+      if (inf) {
+        setPatente(inf.patente);
+        if (inf.infractor) setDni(inf.infractor);
+      }
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!patente || !motivo) return;
-    onSubmit({
-      id: `VEH-${Math.floor(1000 + Math.random() * 9000)}`,
-      patente: patente.toUpperCase(),
-      motivo,
-      deposito,
-      origen: origen === "infraction" ? "Infracción" : "Operativo",
-      originId: `${origen === "infraction" ? "INF" : "OP"}-${Math.floor(100 + Math.random() * 900)}`,
-      fechaIngreso: new Date().toLocaleDateString("es-AR"),
-      estado: "Retenido",
-      requisitos: { pago: false, documentacion: false, verificacion: false },
-      montoAcarreo: 25000,
-      montoEstadia: 3000,
-    });
+    if (!originId || !patente.trim() || !dni.trim() || !motivo.trim() || !ingreso) return;
+    const ok = await run(() =>
+      onSubmit({
+        licensePlate: patente.trim().toUpperCase(),
+        ownerNationalId: dni.trim(),
+        reason: motivo.trim(),
+        depotLocation: deposito,
+        entryDateTime: toApiDateTime(ingreso),
+        originType: origen,
+        originId,
+      })
+    );
+    if (ok) onDone();
   };
 
   return (
     <form onSubmit={handleSubmit}>
+      <ErrorNote title="No se pudo registrar el ingreso">{error}</ErrorNote>
+      <Field label="Origen de la retención" required>
+        <div className="flex gap-2">
+          {[
+            ["INFRACTION", "Infracción"],
+            ["OPERATION", "Operativo"],
+          ].map(([code, label]) => (
+            <button
+              type="button"
+              key={code}
+              onClick={() => switchOrigen(code)}
+              className={cx(
+                "flex-1 rounded-lg border px-3 py-2 text-sm font-medium",
+                origen === code ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-500"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field
+        label={origen === "INFRACTION" ? "Infracción de origen" : "Operativo de origen"}
+        required
+        hint={options.length === 0 ? "No hay registros para vincular todavía." : undefined}
+      >
+        <select value={originId} onChange={(e) => pickOrigin(e.target.value)} className={inputCls} disabled={options.length === 0}>
+          <option value="">Elegí una opción…</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </Field>
       <div className="grid gap-x-4 sm:grid-cols-2">
         <Field label="Patente" required>
           <input value={patente} onChange={(e) => setPatente(e.target.value.toUpperCase())} className={inputCls} />
         </Field>
+        <Field label="DNI del titular" required hint="Con este DNI el vecino ve el vehículo en su portal.">
+          <input value={dni} onChange={(e) => setDni(e.target.value)} inputMode="numeric" className={inputCls} />
+        </Field>
         <Field label="Depósito">
           <select value={deposito} onChange={(e) => setDeposito(e.target.value)} className={inputCls}>
-            <option>Depósito Norte</option>
-            <option>Depósito Sur</option>
-            <option>Depósito Central</option>
+            {DEPOTS.map((d) => (
+              <option key={d}>{d}</option>
+            ))}
           </select>
+        </Field>
+        <Field label="Fecha y hora de ingreso" required>
+          <input type="datetime-local" value={ingreso} max={nowForInput()} onChange={(e) => setIngreso(e.target.value)} className={inputCls} />
         </Field>
       </div>
       <Field label="Motivo de la retención" required>
         <input value={motivo} onChange={(e) => setMotivo(e.target.value)} className={inputCls} placeholder="Estacionamiento en doble fila reincidente" />
       </Field>
-      <Field label="Origen de la retención">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setOrigen("infraction")}
-            className={cx(
-              "flex-1 rounded-lg border px-3 py-2 text-sm font-medium",
-              origen === "infraction" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-500"
-            )}
-          >
-            Infracción
-          </button>
-          <button
-            type="button"
-            onClick={() => setOrigen("operation")}
-            className={cx(
-              "flex-1 rounded-lg border px-3 py-2 text-sm font-medium",
-              origen === "operation" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-500"
-            )}
-          >
-            Operativo
-          </button>
-        </div>
-      </Field>
-      <Button type="submit" variant="primary" className="mt-2 w-full">
-        Registrar ingreso
+      <Button type="submit" variant="primary" className="mt-2 w-full" disabled={acting}>
+        {acting ? "Registrando..." : "Registrar ingreso"}
       </Button>
     </form>
   );
 }
 
-function VehiculosStaff({ impounded, onCreate, onToggleReq, onRelease }) {
+function LiberarVehiculoForm({ vehicle, onSubmit, onDone }) {
+  const requirements = Object.entries(REQUISITO_LABEL);
+  const [checked, setChecked] = useState([]);
+  const [suggestion] = useState(() => suggestFee(vehicle.ingresoISO));
+  const [fee, setFee] = useState(String(suggestion.total));
+  const [reference, setReference] = useState("");
+  const { run, acting, error } = useAction();
+
+  const feeNumber = Number(fee);
+  const feeValid = fee !== "" && Number.isFinite(feeNumber) && feeNumber >= 0;
+  const needsReference = feeValid && feeNumber > 0;
+  // El backend exige al menos un requisito verificado (no necesariamente todos).
+  const canRelease = checked.length >= 1 && feeValid && (!needsReference || reference.trim() !== "");
+
+  const toggle = (code) => setChecked((prev) => (prev.includes(code) ? prev.filter((r) => r !== code) : [...prev, code]));
+
+  const handleRelease = async () => {
+    const ok = await run(() =>
+      onSubmit(vehicle.id, {
+        verifiedRequirements: checked,
+        towingAndStorageFee: feeNumber,
+        paymentReference: reference.trim() || null,
+      })
+    );
+    if (ok) onDone();
+  };
+
+  return (
+    <div>
+      <p className="mb-2 mt-4 text-sm font-medium text-slate-700">
+        Requisitos verificados <span className="text-red-600">*</span>
+      </p>
+      <div className="space-y-2">
+        {requirements.map(([code, label]) => (
+          <label key={code} className="flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked={checked.includes(code)} onChange={() => toggle(code)} className="h-4 w-4 rounded border-slate-300" />
+            {label}
+          </label>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-slate-400">Marcá al menos un requisito verificado para poder liberar el vehículo.</p>
+      <div className="mt-4 grid gap-x-4 sm:grid-cols-2">
+        <Field
+          label="Costo de acarreo y estadía"
+          required
+          hint={`Sugerido: acarreo ${formatCurrency(ACARREO_BASE)} + estadía ${formatCurrency(ESTADIA_DIARIA)} × ${plural(suggestion.days, "día", "días")}.`}
+        >
+          <input type="number" min="0" step="1" value={fee} onChange={(e) => setFee(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Referencia de pago" required={needsReference} hint={needsReference ? undefined : "Solo si el costo es mayor que cero."}>
+          <input value={reference} onChange={(e) => setReference(e.target.value)} className={inputCls} />
+        </Field>
+      </div>
+      <ErrorNote title="No se pudo liberar el vehículo">{error}</ErrorNote>
+      <Button className="mt-2 w-full" variant="success" disabled={!canRelease || acting} onClick={handleRelease}>
+        {acting ? "Liberando..." : "Liberar vehículo"}
+      </Button>
+    </div>
+  );
+}
+
+// Edición de los datos de una retención (PATCH, solo ADMINISTRADOR y solo mientras sigue retenido).
+function EditarRetencionForm({ vehicle, onSubmit, onDone, onCancel }) {
+  const [motivo, setMotivo] = useState(vehicle.motivo ?? "");
+  const [deposito, setDeposito] = useState(vehicle.deposito ?? "");
+  const [dni, setDni] = useState(vehicle.titular ?? "");
+  const { run, acting, error } = useAction();
+
+  // PATCH parcial: solo se envían los campos que cambiaron.
+  const changes = {};
+  if (motivo.trim() !== (vehicle.motivo ?? "")) changes.reason = motivo.trim();
+  if (deposito.trim() !== (vehicle.deposito ?? "")) changes.depotLocation = deposito.trim();
+  if (dni.trim() !== (vehicle.titular ?? "")) changes.ownerNationalId = dni.trim();
+  const hasChanges = Object.keys(changes).length > 0;
+  const valid = motivo.trim() !== "" && deposito.trim() !== "" && dni.trim() !== "";
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!hasChanges || !valid) return;
+    if (await run(() => onSubmit(vehicle.id, changes))) onDone();
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-4 border-t border-slate-100 pt-4">
+      <p className="mb-3 text-sm font-semibold text-slate-700">Editar datos de la retención</p>
+      <ErrorNote title="No se pudo guardar">{error}</ErrorNote>
+      <Field label="Motivo de la retención" required hint={`${motivo.length}/1000`}>
+        <input value={motivo} maxLength={1000} onChange={(e) => setMotivo(e.target.value)} className={inputCls} />
+      </Field>
+      <div className="grid gap-x-4 sm:grid-cols-2">
+        <Field label="Depósito" required>
+          <input value={deposito} maxLength={200} list="depot-options" onChange={(e) => setDeposito(e.target.value)} className={inputCls} />
+          <datalist id="depot-options">
+            {DEPOTS.map((d) => (
+              <option key={d} value={d} />
+            ))}
+          </datalist>
+        </Field>
+        <Field label="DNI del titular" required>
+          <input value={dni} maxLength={30} inputMode="numeric" onChange={(e) => setDni(e.target.value)} className={inputCls} />
+        </Field>
+      </div>
+      <div className="flex gap-2">
+        <Button type="submit" variant="primary" disabled={acting || !hasChanges || !valid}>
+          {acting ? "Guardando..." : "Guardar cambios"}
+        </Button>
+        <Button type="button" variant="ghost" disabled={acting} onClick={onCancel}>
+          Cancelar
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function VehiculosStaff({ impounded, resource, role, infractions, operations, onCreate, onUpdate, onRelease }) {
   const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState(null);
+  const [detailId, setDetailId] = useState(null);
+  const [editing, setEditing] = useState(false);
+
+  // Permisos del backend: el inspector registra el ingreso; el administrador edita y libera.
+  const canRegister = role === "INSPECTOR";
+  const canRelease = role === "ADMINISTRADOR";
+
+  const closeDetail = () => {
+    setDetailId(null);
+    setEditing(false);
+  };
+
+  // Se busca por id para que el detalle refleje lo que devuelve el backend tras recargar.
+  const detail = impounded.find((v) => v.id === detailId) || null;
+
   const columns = [
     { header: "Patente", render: (r) => <span className="font-mono font-semibold">{r.patente}</span> },
-    { header: "Origen", render: (r) => `${r.origen} · ${r.originId}` },
+    { header: "Origen", render: (r) => `${r.origen} · ${String(r.originId).slice(0, 8)}` },
     { header: "Ingreso", render: (r) => r.fechaIngreso },
     { header: "Depósito", render: (r) => r.deposito },
-    { header: "Costo", render: (r) => formatCurrency(r.montoAcarreo + r.montoEstadia) },
+    { header: "Costo", render: (r) => (r.costo != null ? formatCurrency(r.costo) : "—") },
     { header: "Estado", render: (r) => <Badge tone={VEHICULO_ESTADO[r.estado]}>{r.estado}</Badge> },
   ];
   return (
     <div className="space-y-6">
       <SectionToolbar
         title="Vehículos retenidos"
-        desc="Ingreso, seguimiento y liberación de vehículos en depósito."
+        desc={canRegister ? "Ingreso y seguimiento de vehículos en depósito." : "Seguimiento, edición y liberación de vehículos en depósito."}
         actions={
-          <Button variant="accent" onClick={() => setOpen(true)}>
-            <Plus size={16} /> Registrar ingreso
-          </Button>
+          canRegister && (
+            <Button variant="accent" onClick={() => setOpen(true)}>
+              <Plus size={16} /> Registrar ingreso
+            </Button>
+          )
         }
       />
-      <DataTable columns={columns} data={impounded} onRowClick={setDetail} />
+      <ResourceStatus resource={resource} loadingText="Cargando vehículos retenidos..." />
+      {resource.loaded && <DataTable columns={columns} data={impounded} onRowClick={(r) => setDetailId(r.id)} />}
       <Modal open={open} onClose={() => setOpen(false)} title="Registrar ingreso de vehículo">
-        <IngresoVehiculoForm
-          onSubmit={(data) => {
-            onCreate(data);
-            setOpen(false);
-          }}
-        />
+        <IngresoVehiculoForm infractions={infractions} operations={operations} onSubmit={onCreate} onDone={() => setOpen(false)} />
       </Modal>
-      <Modal open={!!detail} onClose={() => setDetail(null)} title="Detalle del vehículo retenido">
+      <Modal open={!!detail} onClose={closeDetail} title="Detalle del vehículo retenido">
         {detail && (
           <div>
             <dl className="space-y-2 text-sm">
               <Row label="Patente" value={detail.patente} />
+              <Row label="DNI del titular" value={detail.titular} />
               <Row label="Motivo" value={detail.motivo} />
-              <Row label="Origen" value={`${detail.origen} · ${detail.originId}`} />
-              <Row label="Costo total" value={formatCurrency(detail.montoAcarreo + detail.montoEstadia)} />
+              <Row label="Origen" value={`${detail.origen} · ${String(detail.originId).slice(0, 8)}`} />
+              <Row label="Depósito" value={detail.deposito} />
+              <Row label="Ingreso" value={detail.fechaIngreso} />
+              <Row label="Estado" value={detail.estado} />
             </dl>
-            <p className="mb-2 mt-4 text-sm font-medium text-slate-700">Requisitos para liberar</p>
-            <div className="space-y-2">
-              {Object.entries(detail.requisitos).map(([k, v]) => (
-                <label key={k} className="flex items-center gap-2 text-sm text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={v}
-                    disabled={detail.estado === "Liberado"}
-                    onChange={() => onToggleReq(detail.id, k)}
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  {REQUISITO_LABEL[k]}
-                </label>
-              ))}
-            </div>
-            {detail.estado === "Retenido" ? (
-              <Button
-                className="mt-4 w-full"
-                variant="success"
-                disabled={!Object.values(detail.requisitos).every(Boolean)}
-                onClick={() => {
-                  onRelease(detail.id);
-                  setDetail(null);
-                }}
-              >
-                Liberar vehículo
-              </Button>
-            ) : (
-              <div className="mt-4 flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
-                <CheckCircle2 size={16} /> Liberado el {detail.fechaLiberacion}
+            {detail.estado === "Retenido" && canRelease && editing && (
+              <EditarRetencionForm vehicle={detail} onSubmit={onUpdate} onDone={() => setEditing(false)} onCancel={() => setEditing(false)} />
+            )}
+            {detail.estado === "Retenido" && canRelease && !editing && (
+              <>
+                <Button size="sm" variant="secondary" className="mt-4" onClick={() => setEditing(true)}>
+                  Editar datos
+                </Button>
+                <LiberarVehiculoForm vehicle={detail} onSubmit={onRelease} onDone={closeDetail} />
+              </>
+            )}
+            {detail.estado === "Retenido" && !canRelease && (
+              <p className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-500">La liberación la autoriza un administrador.</p>
+            )}
+            {detail.estado === "Liberado" && (
+              <div className="mt-4 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-700">
+                <p className="flex items-center gap-2 font-semibold">
+                  <CheckCircle2 size={16} /> Vehículo liberado
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {detail.requisitos.map((r) => (
+                    <li key={r}>· {REQUISITO_LABEL[r] || r}</li>
+                  ))}
+                </ul>
+                <p className="mt-2">Costo: {formatCurrency(detail.costo ?? 0)}</p>
+                {detail.referenciaPago && <p>Referencia de pago: {detail.referenciaPago}</p>}
+                {detail.liberadoPor && <p>Autorizó: {detail.liberadoPor}</p>}
               </div>
             )}
           </div>
@@ -2224,47 +2734,386 @@ function VehiculosStaff({ impounded, onCreate, onToggleReq, onRelease }) {
   );
 }
 
-function EstacionamientoStaff({ zones, violations, onValidate, onDiscard }) {
+// ----- Estacionamiento medido -----
+
+function mapApiZone(api) {
+  return {
+    id: api.zoneId,
+    nombre: api.name,
+    limites: api.boundaries,
+    horario: api.allowedHours,
+    activa: api.status === "ACTIVE",
+    tarifaVigente: api.tariff?.pricePerHour ?? null,
+    tarifas: api.tariffs || [],
+  };
+}
+
+function mapApiSession(api) {
+  return {
+    id: api.sessionId,
+    patente: api.licensePlate,
+    zonaId: api.zoneId,
+    inicio: formatDateTime(api.startDateTime),
+    fin: api.endDateTime ? formatDateTime(api.endDateTime) : null,
+    pagada: !!api.paid,
+  };
+}
+
+function ZonaForm({ zone, onSubmit, onDone }) {
+  const [name, setName] = useState(zone?.nombre ?? "");
+  const [boundaries, setBoundaries] = useState(zone?.limites ?? "");
+  const [hours, setHours] = useState(zone?.horario ?? "");
+  const [status, setStatus] = useState(zone && !zone.activa ? "INACTIVE" : "ACTIVE");
+  const { run, acting, error } = useAction();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name.trim() || !boundaries.trim() || !hours.trim()) return;
+    const body = { name: name.trim(), boundaries: boundaries.trim(), allowedHours: hours.trim() };
+    const ok = await run(() => onSubmit(zone ? { ...body, status } : body));
+    if (ok) onDone();
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <ErrorNote title={zone ? "No se pudo guardar la zona" : "No se pudo crear la zona"}>{error}</ErrorNote>
+      <Field label="Nombre" required>
+        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Zona Azul — Microcentro" />
+      </Field>
+      <Field label="Límites" required hint="Calles que delimitan la zona.">
+        <input value={boundaries} onChange={(e) => setBoundaries(e.target.value)} className={inputCls} />
+      </Field>
+      <Field label="Horario permitido" required>
+        <input value={hours} onChange={(e) => setHours(e.target.value)} className={inputCls} placeholder="8 a 20 hs" />
+      </Field>
+      {zone && (
+        <Field label="Estado">
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
+            <option value="ACTIVE">Activa</option>
+            <option value="INACTIVE">Inactiva</option>
+          </select>
+        </Field>
+      )}
+      <Button type="submit" variant="primary" className="mt-2 w-full" disabled={acting}>
+        {acting ? "Guardando..." : zone ? "Guardar cambios" : "Crear zona"}
+      </Button>
+    </form>
+  );
+}
+
+function TarifasPanel({ zone, onCreate, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(null);
+  const [deleting, setDeleting] = useState(null); // tarifa pendiente de confirmar la baja
+  const [price, setPrice] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const { run, acting, error, setError } = useAction();
+  const del = useAction();
+
+  const startEdit = (t) => {
+    setEditing(t);
+    setPrice(String(t.pricePerHour));
+    setFrom(t.validFrom);
+    setTo(t.validTo || "");
+    setError("");
+  };
+  const reset = () => {
+    setEditing(null);
+    setPrice("");
+    setFrom("");
+    setTo("");
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!price || !from || !to) return;
+    const body = { pricePerHour: Number(price), validFrom: from, validTo: to };
+    const ok = await run(async () => {
+      if (!(body.pricePerHour > 0)) throw new Error("El precio por hora tiene que ser mayor que cero.");
+      if (body.validTo < body.validFrom) throw new Error("La fecha final no puede ser anterior a la inicial.");
+      // En edición no se manda zoneId: la tarifa no cambia de zona.
+      return editing ? onUpdate(editing.tariffId, body) : onCreate({ zoneId: zone.id, ...body });
+    });
+    if (ok) reset();
+  };
+
+  const columns = [
+    { header: "Precio por hora", render: (t) => formatCurrency(t.pricePerHour) },
+    { header: "Desde", render: (t) => formatLocalDate(t.validFrom) },
+    { header: "Hasta", render: (t) => formatLocalDate(t.validTo) },
+    {
+      header: "Acciones",
+      render: (t) => (
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => startEdit(t)}>
+            Editar
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => {
+              del.setError("");
+              setDeleting(t);
+            }}
+          >
+            Eliminar
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <DataTable columns={columns} data={zone.tarifas} keyField="tariffId" emptyLabel="Esta zona todavía no tiene tarifas" />
+      {deleting && (
+        <div className="mt-4 rounded-xl border border-red-100 bg-red-50 p-4 text-sm">
+          <p className="font-semibold text-red-700">
+            ¿Eliminar la tarifa de {formatCurrency(deleting.pricePerHour)}/hora ({formatLocalDate(deleting.validFrom)} al {formatLocalDate(deleting.validTo)})?
+          </p>
+          <p className="mt-1 text-red-600">Dejará de mostrarse en la zona. Esta acción no se puede deshacer desde acá.</p>
+          {del.error && (
+            <p className="mt-2 flex items-center gap-2 font-medium text-red-700">
+              <AlertCircle size={15} /> {del.error}
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <Button
+              size="sm"
+              variant="accent"
+              disabled={del.acting}
+              onClick={async () => {
+                if (await del.run(() => onDelete(deleting.tariffId))) {
+                  if (editing?.tariffId === deleting.tariffId) reset();
+                  setDeleting(null);
+                }
+              }}
+            >
+              {del.acting ? "Eliminando..." : "Sí, eliminar tarifa"}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={del.acting} onClick={() => setDeleting(null)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+      <form onSubmit={handleSubmit} className="mt-6">
+        <p className="mb-3 text-sm font-semibold text-slate-700">{editing ? "Editar tarifa" : "Nueva tarifa"}</p>
+        <ErrorNote title="No se pudo guardar la tarifa">{error}</ErrorNote>
+        <div className="grid gap-x-4 sm:grid-cols-3">
+          <Field label="Precio por hora" required>
+            <input type="number" min="0.01" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Vigente desde" required>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Vigente hasta" required>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
+          </Field>
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" variant="primary" disabled={acting}>
+            {acting ? "Guardando..." : editing ? "Guardar tarifa" : "Agregar tarifa"}
+          </Button>
+          {editing && (
+            <Button type="button" variant="ghost" onClick={reset}>
+              Cancelar edición
+            </Button>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function FaltaPagoForm({ session, zoneName, onSubmit, onDone }) {
+  const [amount, setAmount] = useState(String(INFRACTION_TYPES.find((t) => t.code === "UNPAID_PARKING").base));
+  const { run, acting, error } = useAction();
+  const amountNumber = Number(amount);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!(amountNumber > 0)) return;
+    const ok = await run(() => onSubmit(session.id, amountNumber));
+    if (ok) onDone();
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div className="mb-4 rounded-lg bg-slate-50 p-4 text-sm">
+        <p className="font-mono font-semibold text-slate-800">{session.patente}</p>
+        <p className="text-slate-500">
+          {zoneName} · desde {session.inicio}
+        </p>
+      </div>
+      <ErrorNote title="No se pudo generar la infracción">{error}</ErrorNote>
+      <Field label="Importe base de la infracción" required hint="Se genera una infracción por estacionamiento medido sin pago, visible en Infracciones.">
+        <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputCls} />
+      </Field>
+      <Button type="submit" variant="danger" className="w-full" disabled={acting || !(amountNumber > 0)}>
+        {acting ? "Generando..." : "Generar infracción"}
+      </Button>
+    </form>
+  );
+}
+
+function EstacionamientoStaff({
+  zones,
+  zonesResource,
+  sessions,
+  sessionsResource,
+  role,
+  onCreateZone,
+  onUpdateZone,
+  onDeleteZone,
+  onCreateTariff,
+  onUpdateTariff,
+  onDeleteTariff,
+  onFlagUnpaid,
+}) {
+  const [zoneModal, setZoneModal] = useState(null); // "new" o la zona a editar
+  const [tariffZoneId, setTariffZoneId] = useState(null);
+  const [flagTarget, setFlagTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null); // zona pendiente de confirmar la baja
+  const deletion = useAction();
+
+  // Permisos del backend: el administrador configura zonas y tarifas; el inspector marca la falta de pago.
+  const isAdmin = role === "ADMINISTRADOR";
+  const isInspector = role === "INSPECTOR";
+
+  const zoneName = (id) => zones.find((z) => z.id === id)?.nombre ?? "—";
+  const tariffZone = zones.find((z) => z.id === tariffZoneId) || null;
+
   const zoneColumns = [
     { header: "Zona", render: (r) => r.nombre },
     { header: "Horario", render: (r) => r.horario },
-    { header: "Tarifa", render: (r) => `${r.tarifa}/hora` },
-    { header: "Ocupación", render: (r) => `${r.ocupacion}%` },
+    { header: "Límites", render: (r) => r.limites },
+    { header: "Tarifa vigente", render: (r) => (r.tarifaVigente != null ? `${formatCurrency(r.tarifaVigente)}/hora` : "Sin tarifa vigente") },
+    { header: "Estado", render: (r) => <Badge tone={r.activa ? "emerald" : "slate"}>{r.activa ? "Activa" : "Inactiva"}</Badge> },
+    ...(isAdmin
+      ? [
+          {
+            header: "Acciones",
+            render: (r) => (
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => setZoneModal(r)}>
+                  Editar
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setTariffZoneId(r.id)}>
+                  Tarifas
+                </Button>
+                {r.activa && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => {
+                      deletion.setError("");
+                      setDeleteTarget(r);
+                    }}
+                  >
+                    Eliminar
+                  </Button>
+                )}
+              </div>
+            ),
+          },
+        ]
+      : []),
   ];
-  const violationColumns = [
+
+  const sessionColumns = [
     { header: "Patente", render: (r) => <span className="font-mono font-semibold">{r.patente}</span> },
-    { header: "Zona", render: (r) => r.zona },
-    { header: "Detectado", render: (r) => r.hora },
-    { header: "Estado", render: (r) => <Badge tone={INCUMPLIMIENTO_ESTADO[r.estado]}>{r.estado}</Badge> },
-    {
-      header: "Acciones",
-      render: (r) =>
-        r.estado === "Pendiente validación" ? (
-          <div className="flex gap-2">
-            <Button size="sm" variant="danger" onClick={() => onValidate(r.id)}>
-              Validar
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => onDiscard(r.id)}>
-              Descartar
-            </Button>
-          </div>
-        ) : null,
-    },
+    { header: "Zona", render: (r) => zoneName(r.zonaId) },
+    { header: "Inicio", render: (r) => r.inicio },
+    { header: "Fin", render: (r) => r.fin || "En curso" },
+    { header: "Pago", render: (r) => <Badge tone={r.pagada ? "emerald" : "amber"}>{r.pagada ? "Pagada" : "Sin pagar"}</Badge> },
+    ...(isInspector
+      ? [
+          {
+            header: "Acciones",
+            render: (r) =>
+              r.pagada ? null : (
+                <Button size="sm" variant="danger" onClick={() => setFlagTarget(r)}>
+                  Marcar falta de pago
+                </Button>
+              ),
+          },
+        ]
+      : []),
   ];
+
   return (
     <div className="space-y-8">
-      <SectionToolbar title="Estacionamiento medido" desc="Configuración de zonas y validación de incumplimientos detectados." />
+      <SectionToolbar
+        title="Estacionamiento medido"
+        desc={isAdmin ? "Configuración de zonas, horarios y tarifas." : "Zonas configuradas y sesiones de estacionamiento."}
+        actions={
+          isAdmin && (
+            <Button variant="accent" onClick={() => setZoneModal("new")}>
+              <Plus size={16} /> Nueva zona
+            </Button>
+          )
+        }
+      />
       <div>
         <p className="mb-3 text-sm font-semibold text-slate-700">Zonas configuradas</p>
-        <DataTable columns={zoneColumns} data={zones} />
+        <ResourceStatus resource={zonesResource} loadingText="Cargando zonas..." />
+        {zonesResource.loaded && <DataTable columns={zoneColumns} data={zones} emptyLabel="Todavía no hay zonas configuradas" />}
       </div>
       <div>
-        <p className="mb-3 text-sm font-semibold text-slate-700">Incumplimientos detectados</p>
-        <p className="mb-3 text-xs text-slate-400">
-          Validar un incumplimiento genera automáticamente una infracción en la gestión de infracciones (F1).
-        </p>
-        <DataTable columns={violationColumns} data={violations} />
+        <p className="mb-3 text-sm font-semibold text-slate-700">Sesiones de estacionamiento</p>
+        {isInspector && (
+          <p className="mb-3 text-xs text-slate-400">Marcar la falta de pago de una sesión genera una infracción en la gestión de infracciones.</p>
+        )}
+        <ResourceStatus resource={sessionsResource} loadingText="Cargando sesiones..." />
+        {sessionsResource.loaded && <DataTable columns={sessionColumns} data={sessions} emptyLabel="Todavía no hay sesiones registradas" />}
       </div>
+
+      <Modal open={!!zoneModal} onClose={() => setZoneModal(null)} title={zoneModal === "new" ? "Nueva zona" : "Editar zona"}>
+        {zoneModal && (
+          <ZonaForm
+            zone={zoneModal === "new" ? null : zoneModal}
+            onSubmit={zoneModal === "new" ? onCreateZone : (data) => onUpdateZone(zoneModal.id, data)}
+            onDone={() => setZoneModal(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal open={!!tariffZone} onClose={() => setTariffZoneId(null)} title={tariffZone ? `Tarifas — ${tariffZone.nombre}` : "Tarifas"} wide>
+        {tariffZone && <TarifasPanel zone={tariffZone} onCreate={onCreateTariff} onUpdate={onUpdateTariff} onDelete={onDeleteTariff} />}
+      </Modal>
+
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Eliminar zona">
+        {deleteTarget && (
+          <div>
+            <p className="text-sm text-slate-600">
+              ¿Seguro que querés eliminar la zona <span className="font-semibold text-slate-900">{deleteTarget.nombre}</span>? Pasa a estado
+              Inactiva y deja de mostrarse a los vecinos; las sesiones ya registradas se conservan.
+            </p>
+            <div className="mt-4">
+              <ErrorNote title="No se pudo eliminar la zona">{deletion.error}</ErrorNote>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="accent"
+                disabled={deletion.acting}
+                onClick={async () => {
+                  if (await deletion.run(() => onDeleteZone(deleteTarget.id))) setDeleteTarget(null);
+                }}
+              >
+                {deletion.acting ? "Eliminando..." : "Sí, eliminar zona"}
+              </Button>
+              <Button variant="ghost" disabled={deletion.acting} onClick={() => setDeleteTarget(null)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!flagTarget} onClose={() => setFlagTarget(null)} title="Marcar falta de pago">
+        {flagTarget && <FaltaPagoForm session={flagTarget} zoneName={zoneName(flagTarget.zonaId)} onSubmit={onFlagUnpaid} onDone={() => setFlagTarget(null)} />}
+      </Modal>
     </div>
   );
 }
@@ -2294,7 +3143,8 @@ function AuthenticatedApp({ role, username, onLogout }) {
   // El rol CIUDADANO (login de vecino) sólo puede operar el Portal vecino;
   // el Panel interno queda reservado al personal municipal autenticado.
   const canAccessStaff = role !== "CIUDADANO";
-  const [mode, setModeState] = useState("ciudadano");
+  // El personal arranca en el Panel interno; el vecino, en el Portal vecino.
+  const [mode, setModeState] = useState(canAccessStaff ? "staff" : "ciudadano");
   const [citizenView, setCitizenView] = useState("home");
   const [staffView, setStaffView] = useState("dashboard");
   const [selectedInfraction, setSelectedInfraction] = useState(null);
@@ -2302,13 +3152,8 @@ function AuthenticatedApp({ role, username, onLogout }) {
   const [trackCode, setTrackCode] = useState("");
   const [trackResult, setTrackResult] = useState(null);
 
-  const [infractions, setInfractions] = useState(INITIAL_INFRACTIONS);
-  const [closures, setClosures] = useState(INITIAL_CLOSURES);
-  const [operativos, setOperativos] = useState(INITIAL_OPERATIVOS);
-  const [accidents, setAccidents] = useState(INITIAL_ACCIDENTS);
-  const [impounded, setImpounded] = useState(INITIAL_IMPOUNDED);
-  const [zones] = useState(INITIAL_ZONES);
-  const [violations, setViolations] = useState(INITIAL_VIOLATIONS);
+  // El seguimiento de descargos por código sigue en mock: todavía no tiene endpoint.
+  const [mockInfractions] = useState(INITIAL_INFRACTIONS);
 
   const goMode = (m) => {
     if (m === "staff" && !canAccessStaff) return;
@@ -2321,6 +3166,78 @@ function AuthenticatedApp({ role, username, onLogout }) {
   // para el resto de los roles no se piden y la pantalla lo explica.
   const isCitizen = role === "CIUDADANO";
   const nationalId = getCurrentNationalId();
+  // Infracciones del Panel interno (GET /infractions: INSPECTOR y ADMINISTRADOR).
+  const staffInfractionsRes = useResource(getAllInfractions, { enabled: canAccessStaff });
+  const staffInfractions = useMemo(() => staffInfractionsRes.data.map(mapApiInfraction), [staffInfractionsRes.data]);
+  const reloadStaffInfractions = staffInfractionsRes.reload;
+
+  // Resto del Panel interno (INSPECTOR y ADMINISTRADOR pueden leer todos estos listados).
+  const staffClosuresRes = useResource(getStreetClosures, { enabled: canAccessStaff });
+  const staffClosures = useMemo(() => staffClosuresRes.data.map(mapApiClosure), [staffClosuresRes.data]);
+  const operationsRes = useResource(getOperations, { enabled: canAccessStaff });
+  const operations = useMemo(() => operationsRes.data.map(mapApiOperation), [operationsRes.data]);
+  const staffAccidentsRes = useResource(getAccidents, { enabled: canAccessStaff });
+  const staffAccidents = useMemo(() => staffAccidentsRes.data.map(mapApiAccident), [staffAccidentsRes.data]);
+  const staffImpoundedRes = useResource(getImpoundments, { enabled: canAccessStaff });
+  const staffImpounded = useMemo(() => staffImpoundedRes.data.map(mapApiImpoundment), [staffImpoundedRes.data]);
+  const staffZonesRes = useResource(getAllZonesWithTariffs, { enabled: canAccessStaff });
+  const staffZones = useMemo(() => staffZonesRes.data.map(mapApiZone), [staffZonesRes.data]);
+  const sessionsRes = useResource(getParkingSessions, { enabled: canAccessStaff });
+  const sessions = useMemo(() => sessionsRes.data.map(mapApiSession), [sessionsRes.data]);
+
+  const reloadStaffClosures = staffClosuresRes.reload;
+  const reloadOperations = operationsRes.reload;
+  const reloadStaffAccidents = staffAccidentsRes.reload;
+  const reloadStaffImpounded = staffImpoundedRes.reload;
+  const reloadStaffZones = staffZonesRes.reload;
+  const reloadSessions = sessionsRes.reload;
+
+  // Al entrar a una pantalla del panel se pide solo lo que esa pantalla muestra.
+  useEffect(() => {
+    if (mode !== "staff") return;
+    if (staffView === "dashboard") {
+      reloadStaffInfractions();
+      reloadStaffClosures();
+      reloadOperations();
+      reloadStaffAccidents();
+      reloadStaffImpounded();
+      reloadStaffZones();
+      reloadSessions();
+    }
+    if (staffView === "infracciones") reloadStaffInfractions();
+    if (staffView === "cortes") reloadStaffClosures();
+    if (staffView === "operativos") reloadOperations();
+    if (staffView === "accidentes") reloadStaffAccidents();
+    if (staffView === "vehiculos") {
+      reloadStaffImpounded();
+      reloadStaffInfractions(); // para elegir la infracción de origen
+      reloadOperations(); // para elegir el operativo de origen
+    }
+    if (staffView === "estacionamiento") {
+      reloadStaffZones();
+      reloadSessions();
+    }
+  }, [
+    mode,
+    staffView,
+    reloadStaffInfractions,
+    reloadStaffClosures,
+    reloadOperations,
+    reloadStaffAccidents,
+    reloadStaffImpounded,
+    reloadStaffZones,
+    reloadSessions,
+  ]);
+
+  // El Dashboard junta los siete listados: un solo estado de carga/error para todos.
+  const dashboardResources = [staffInfractionsRes, staffClosuresRes, operationsRes, staffAccidentsRes, staffImpoundedRes, staffZonesRes, sessionsRes];
+  const dashboardStatus = {
+    loading: dashboardResources.some((r) => r.loading),
+    loaded: dashboardResources.every((r) => r.loaded),
+    error: dashboardResources.find((r) => r.error)?.error || "",
+    reload: () => dashboardResources.forEach((r) => r.reload()),
+  };
+
   const parkingZones = useResource(getActiveZonesWithTariff);
   const currentClosures = useResource(getCurrentStreetClosures);
   const myImpoundments = useResource(getMyImpoundments, { enabled: isCitizen });
@@ -2385,56 +3302,98 @@ function AuthenticatedApp({ role, username, onLogout }) {
     await loadCitizenInfractions();
   };
 
-  const handleResolveInfraccion = (id, estado) => {
-    setInfractions((prev) => prev.map((i) => (i.id === id ? { ...i, estado } : i)));
+  // Panel interno: cada acción llama al backend y después recarga la lista.
+  const handleCreateInfraccion = async (data) => {
+    await createInfraction(data);
+    await reloadStaffInfractions();
+  };
+  const handleConfirmInfraccion = async (id) => {
+    await confirmInfraction(id);
+    await reloadStaffInfractions();
+  };
+  const handleAnnulInfraccion = async (id, reason) => {
+    await annulInfraction(id, reason);
+    await reloadStaffInfractions();
   };
 
-  const handleCreateInfraccion = (data) => setInfractions((prev) => [data, ...prev]);
-
-  const handleEvaluateClosure = (id, payload) => {
-    setClosures((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? { ...c, estado: payload.estado, desvios: payload.desvios, condiciones: payload.condiciones, rejectionReason: payload.rejectionReason }
-          : c
-      )
-    );
+  // Cada acción llama al backend y después recarga el listado que corresponde.
+  const handleApproveClosure = async (id, payload) => {
+    await approveStreetClosure(id, payload);
+    await reloadStaffClosures();
   };
-  const handleActivateClosure = (id) => setClosures((prev) => prev.map((c) => (c.id === id ? { ...c, estado: "Activo" } : c)));
-  const handleExtendClosure = (id) => setClosures((prev) => prev.map((c) => (c.id === id ? { ...c, fechaFin: `${c.fechaFin} (extendido)` } : c)));
-  const handleFinishClosure = (id) => setClosures((prev) => prev.map((c) => (c.id === id ? { ...c, estado: "Finalizado" } : c)));
-
-  const handleCreateOperativo = (data) => setOperativos((prev) => [data, ...prev]);
-  const handleCreateAccidente = (data) => setAccidents((prev) => [data, ...prev]);
-  const handleCloseAccidente = (id) => setAccidents((prev) => prev.map((a) => (a.id === id ? { ...a, estado: "Cerrado" } : a)));
-
-  const handleCreateImpounded = (data) => setImpounded((prev) => [data, ...prev]);
-  const handleToggleRequisito = (id, key) =>
-    setImpounded((prev) => prev.map((v) => (v.id === id ? { ...v, requisitos: { ...v.requisitos, [key]: !v.requisitos[key] } } : v)));
-  const handleReleaseVehicle = (id) =>
-    setImpounded((prev) => prev.map((v) => (v.id === id ? { ...v, estado: "Liberado", fechaLiberacion: new Date().toLocaleDateString("es-AR") } : v)));
-
-  const handleValidateViolation = (id) => {
-    const violation = violations.find((v) => v.id === id);
-    setViolations((prev) => prev.map((v) => (v.id === id ? { ...v, estado: "Validado" } : v)));
-    if (violation) {
-      setInfractions((prev) => [
-        {
-          id: `INF-${Math.floor(1000 + Math.random() * 9000)}`,
-          tipo: "ESTAC_MEDIDO",
-          tipoLabel: "Estacionamiento medido sin pago",
-          patente: violation.patente,
-          calle: violation.zona,
-          inspector: "Insp. Diaz",
-          monto: 18000,
-          estado: "Pendiente",
-          fecha: new Date().toLocaleString("es-AR"),
-        },
-        ...prev,
-      ]);
-    }
+  const handleRejectClosure = async (id, reason) => {
+    await rejectStreetClosure(id, reason);
+    await reloadStaffClosures();
   };
-  const handleDiscardViolation = (id) => setViolations((prev) => prev.map((v) => (v.id === id ? { ...v, estado: "Descartado" } : v)));
+  const handleActivateClosure = async (id) => {
+    await activateStreetClosure(id);
+    await reloadStaffClosures();
+  };
+  const handleCompleteClosure = async (id, notes) => {
+    await completeStreetClosure(id, notes);
+    await reloadStaffClosures();
+  };
+
+  const handleCreateOperation = async (data) => {
+    await createOperation(data);
+    await reloadOperations();
+  };
+  const handleCloseOperation = async (id, resolution) => {
+    await closeOperation(id, resolution);
+    await reloadOperations();
+  };
+
+  const handleCreateAccident = async (data) => {
+    await createAccident(data);
+    await reloadStaffAccidents();
+  };
+  const handleVerifyAccident = async (id) => {
+    await verifyAccident(id);
+    await reloadStaffAccidents();
+  };
+
+  const handleCreateImpoundment = async (data) => {
+    await createImpoundment(data);
+    await reloadStaffImpounded();
+  };
+  const handleUpdateImpoundment = async (id, data) => {
+    await updateImpoundment(id, data);
+    await reloadStaffImpounded();
+  };
+  const handleReleaseImpoundment = async (id, data) => {
+    await releaseImpoundment(id, data);
+    await reloadStaffImpounded();
+  };
+
+  const handleCreateZone = async (data) => {
+    await createParkingZone(data);
+    await reloadStaffZones();
+  };
+  const handleUpdateZone = async (id, data) => {
+    await updateParkingZone(id, data);
+    await reloadStaffZones();
+  };
+  const handleDeleteZone = async (id) => {
+    await deleteParkingZone(id);
+    await reloadStaffZones();
+  };
+  const handleCreateTariff = async (data) => {
+    await createParkingTariff(data);
+    await reloadStaffZones();
+  };
+  const handleUpdateTariff = async (id, data) => {
+    await updateParkingTariff(id, data);
+    await reloadStaffZones();
+  };
+  const handleDeleteTariff = async (id) => {
+    await deleteParkingTariff(id);
+    await reloadStaffZones();
+  };
+  // Marcar la falta de pago crea una infracción: se recargan las sesiones y las infracciones.
+  const handleFlagUnpaid = async (id, baseAmount) => {
+    await flagParkingSessionUnpaid(id, baseAmount);
+    await Promise.all([reloadSessions(), reloadStaffInfractions()]);
+  };
 
   const categories = [
     {
@@ -2494,7 +3453,7 @@ function AuthenticatedApp({ role, username, onLogout }) {
 
   const handleTrackSubmit = (e) => {
     e.preventDefault();
-    const found = infractions.find((i) => i.appealCode === trackCode.trim());
+    const found = mockInfractions.find((i) => i.appealCode === trackCode.trim());
     setTrackResult(!!found);
   };
 
@@ -2545,31 +3504,80 @@ function AuthenticatedApp({ role, username, onLogout }) {
   const renderStaff = () => {
     switch (staffView) {
       case "infracciones":
-        return <InfraccionesStaff infractions={infractions} onCreate={handleCreateInfraccion} onResolve={handleResolveInfraccion} />;
+        return (
+          <InfraccionesStaff
+            infractions={staffInfractions}
+            resource={staffInfractionsRes}
+            role={role}
+            onCreate={handleCreateInfraccion}
+            onConfirm={handleConfirmInfraccion}
+            onAnnul={handleAnnulInfraccion}
+          />
+        );
       case "cortes":
         return (
           <CortesDeCalleStaff
-            closures={closures}
-            onEvaluate={handleEvaluateClosure}
+            closures={staffClosures}
+            resource={staffClosuresRes}
+            role={role}
+            onApprove={handleApproveClosure}
+            onReject={handleRejectClosure}
             onActivate={handleActivateClosure}
-            onExtend={handleExtendClosure}
-            onFinish={handleFinishClosure}
+            onComplete={handleCompleteClosure}
           />
         );
       case "operativos":
-        return <OperativosStaff operativos={operativos} onCreate={handleCreateOperativo} />;
+        return (
+          <OperativosStaff operativos={operations} resource={operationsRes} role={role} onCreate={handleCreateOperation} onClose={handleCloseOperation} />
+        );
       case "accidentes":
-        return <AccidentesStaff accidents={accidents} onCreate={handleCreateAccidente} onClose={handleCloseAccidente} />;
+        return (
+          <AccidentesStaff accidents={staffAccidents} resource={staffAccidentsRes} role={role} onCreate={handleCreateAccident} onVerify={handleVerifyAccident} />
+        );
       case "vehiculos":
         return (
-          <VehiculosStaff impounded={impounded} onCreate={handleCreateImpounded} onToggleReq={handleToggleRequisito} onRelease={handleReleaseVehicle} />
+          <VehiculosStaff
+            impounded={staffImpounded}
+            resource={staffImpoundedRes}
+            role={role}
+            infractions={staffInfractions}
+            operations={operations}
+            onCreate={handleCreateImpoundment}
+            onUpdate={handleUpdateImpoundment}
+            onRelease={handleReleaseImpoundment}
+          />
         );
       case "estacionamiento":
         return (
-          <EstacionamientoStaff zones={zones} violations={violations} onValidate={handleValidateViolation} onDiscard={handleDiscardViolation} />
+          <EstacionamientoStaff
+            zones={staffZones}
+            zonesResource={staffZonesRes}
+            sessions={sessions}
+            sessionsResource={sessionsRes}
+            role={role}
+            onCreateZone={handleCreateZone}
+            onUpdateZone={handleUpdateZone}
+            onDeleteZone={handleDeleteZone}
+            onCreateTariff={handleCreateTariff}
+            onUpdateTariff={handleUpdateTariff}
+            onDeleteTariff={handleDeleteTariff}
+            onFlagUnpaid={handleFlagUnpaid}
+          />
         );
       default:
-        return <Dashboard infractions={infractions} closures={closures} operativos={operativos} accidents={accidents} impounded={impounded} zones={zones} />;
+        return (
+          <Dashboard
+            role={role}
+            status={dashboardStatus}
+            infractions={staffInfractions}
+            closures={staffClosures}
+            operativos={operations}
+            accidents={staffAccidents}
+            impounded={staffImpounded}
+            zones={staffZones}
+            sessions={sessions}
+          />
+        );
     }
   };
 

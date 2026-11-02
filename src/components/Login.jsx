@@ -34,7 +34,7 @@ const PROFILES = {
 };
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, notice } = useAuth();
   const [profile, setProfile] = useState("vecino");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -96,6 +96,13 @@ export default function Login() {
             </button>
           ))}
         </div>
+
+        {notice && !error && (
+          <div role="status" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-700">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>{notice}</span>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-600">

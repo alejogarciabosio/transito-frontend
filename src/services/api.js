@@ -6,8 +6,25 @@
 // VITE_API_BASE_URL es solo el origen (ej. http://localhost:8080).
 // El prefijo de versión vive acá, en un único lugar, para que nadie tenga
 // que tocar su .env cuando cambie.
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080").replace(/\/+$/, "");
+// localhost es el valor por defecto SOLO en desarrollo (npm run dev). En un build
+// de producción sin la variable, queda vacío y los pedidos van al mismo origen del
+// front: falla enseguida y se nota, en vez de apuntar en silencio a localhost.
+export function resolveBaseUrl(env) {
+  return (env.VITE_API_BASE_URL || (env.DEV ? "http://localhost:8080" : "")).replace(/\/+$/, "");
+}
+
+const BASE_URL = resolveBaseUrl(import.meta.env);
 const API_PREFIX = "/api/v1";
+
+// Mensajes fijos: el backend responde 401 y 403 con textos técnicos y la pantalla necesita algo claro.
+export const SESSION_EXPIRED_MESSAGE = "Tu sesión venció. Volvé a ingresar.";
+export const FORBIDDEN_MESSAGE = "Esta acción no corresponde a tu rol.";
+
+// AuthProvider registra acá qué hacer cuando el backend rechaza el token (401): cerrar la sesión.
+let unauthorizedHandler = null;
+export function setUnauthorizedHandler(handler) {
+  unauthorizedHandler = handler;
+}
 
 export class ApiError extends Error {
   constructor(status, message, type) {
@@ -73,6 +90,14 @@ export async function apiFetch(path, { method = "GET", body, auth = true } = {})
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    // 401 con token: la sesión venció o es inválida -> se cierra y se vuelve al login.
+    // (El login usa auth:false: ahí un 401 son credenciales incorrectas, no una sesión vencida.)
+    if (response.status === 401 && auth) {
+      unauthorizedHandler?.();
+      throw new ApiError(401, SESSION_EXPIRED_MESSAGE, data?.type);
+    }
+    // 403: el token es válido pero el rol no alcanza para esta acción.
+    if (response.status === 403) throw new ApiError(403, FORBIDDEN_MESSAGE, data?.type);
     const message = data?.detail || data?.title || `Error ${response.status}`;
     throw new ApiError(response.status, message, data?.type);
   }
