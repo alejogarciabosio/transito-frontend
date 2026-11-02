@@ -9,23 +9,23 @@ const inputCls =
   "w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors focus:border-slate-400 focus:ring-2 focus:ring-slate-100";
 
 // Dos perfiles de acceso: el vecino se identifica con un usuario (rol
-// CIUDADANO) y el personal municipal con su usuario interno (rol INSPECTOR /
-// SUPERVISOR / etc). Ambos pegan al mismo endpoint /auth/login; el backend
-// es quien determina el rol devuelto.
+// CIUDADANO) y el personal municipal con su cuenta de empleado (INSPECTOR,
+// ADMINISTRADOR o AUDITOR). Ambos pegan al mismo endpoint /auth/login, que valida
+// contra el Módulo 1 (Usuarios) con el email; el backend determina el rol.
 const PROFILES = {
   vecino: {
     label: "Vecino",
-    fieldLabel: "Usuario",
-    placeholder: "ciudadano1",
-    subtitle: "Ingresá con tu usuario para consultar tus trámites.",
+    fieldLabel: "Email o usuario",
+    placeholder: "nombre@gmail.com",
+    subtitle: "Ingresá con tu cuenta municipal para consultar tus trámites.",
     errorLabel: "Usuario o contraseña incorrectos.",
     icon: User,
     cta: "Ingresar",
   },
   staff: {
     label: "Personal municipal",
-    fieldLabel: "Usuario",
-    placeholder: "inspector1",
+    fieldLabel: "Email o usuario",
+    placeholder: "nombre@muni.gob.ar",
     subtitle: "Ingresá con tu usuario para continuar.",
     errorLabel: "Usuario o contraseña incorrectos.",
     icon: ShieldCheck,
@@ -34,7 +34,7 @@ const PROFILES = {
 };
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, notice } = useAuth();
   const [profile, setProfile] = useState("vecino");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -97,6 +97,13 @@ export default function Login() {
           ))}
         </div>
 
+        {notice && !error && (
+          <div role="status" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-700">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>{notice}</span>
+          </div>
+        )}
+
         {error && (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-600">
             <AlertCircle size={16} className="mt-0.5 shrink-0" />
@@ -106,20 +113,23 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">{cfg.fieldLabel}</label>
+            <label htmlFor="login-username" className="mb-1.5 block text-sm font-medium text-slate-700">{cfg.fieldLabel}</label>
             <input
+              id="login-username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               autoFocus
               autoComplete="username"
+              type="text"
               className={inputCls}
               placeholder={cfg.placeholder}
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Contraseña</label>
+            <label htmlFor="login-password" className="mb-1.5 block text-sm font-medium text-slate-700">Contraseña</label>
             <input
+              id="login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

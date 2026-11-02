@@ -4,6 +4,13 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+
+# Vite fija VITE_API_BASE_URL al compilar (no cuando se abre la página), así que
+# tiene que llegar acá como build-arg. En Railway se toma de la variable del
+# servicio con el mismo nombre. En local:
+#   docker build --build-arg VITE_API_BASE_URL=http://localhost:8080 .
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 
 # Etapa 2: sirve los archivos estaticos con Nginx
