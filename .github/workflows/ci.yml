@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+    tags: ['v*']
 
 jobs:
   test:
@@ -17,6 +18,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - name: Dependencias (sin vulnerabilidades altas en producción)
+        run: npm audit --omit=dev --audit-level=high
       - name: Tests con cobertura (mínimo 85 % de líneas)
         run: npm run test:coverage
       - run: npm run build
+
+  secretos:
+    name: Escaneo de secretos (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
