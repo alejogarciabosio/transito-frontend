@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useId, isValidElement, cloneElement } from "react";
 import {
   Search,
   FileWarning,
@@ -162,7 +162,6 @@ const AGGRAVATING_FACTORS = [
   { code: "RESISTENCIA", label: "Resistencia a la autoridad", pct: 0.2 },
 ];
 
-const CITIZEN_PLATE = "AB123CD";
 
 // Requisitos de liberación: el backend guarda el código tal cual se envía en
 // verifiedRequirements (texto libre, al menos uno); acá se les pone etiqueta.
@@ -267,89 +266,6 @@ const STAFF_NAV = [
   { id: "estacionamiento", label: "Estacionamiento medido", icon: ParkingCircle },
 ];
 
-const INITIAL_INFRACTIONS = [
-  {
-    id: "INF-1001",
-    tipo: "ESTAC_PROHIBIDO",
-    tipoLabel: "Estacionamiento prohibido",
-    patente: CITIZEN_PLATE,
-    calle: "Av. Rivadavia 4500",
-    inspector: "Insp. Diaz",
-    monto: 15000,
-    estado: "Pendiente",
-    fecha: "18/08/2026 09:14",
-  },
-  {
-    id: "INF-1002",
-    tipo: "EXCESO_VELOCIDAD",
-    tipoLabel: "Exceso de velocidad",
-    patente: CITIZEN_PLATE,
-    calle: "Av. Rivadavia 4500",
-    inspector: "Insp. Romero",
-    monto: 63000,
-    estado: "Apelada",
-    fecha: "10/08/2026 18:32",
-    motivoDescargo:
-      "El cinemómetro no contaba con la calibración vigente al momento del control.",
-    appealCode: "APL-482913",
-  },
-  {
-    id: "INF-1003",
-    tipo: "SEMAFORO_ROJO",
-    tipoLabel: "Cruce en semáforo rojo",
-    patente: CITIZEN_PLATE,
-    calle: "Av. Independencia 1200",
-    inspector: "Insp. Fernández",
-    monto: 60000,
-    estado: "Confirmada",
-    fecha: "05/08/2026 08:03",
-  },
-  {
-    id: "INF-1004",
-    tipo: "ESTAC_MEDIDO",
-    tipoLabel: "Estacionamiento medido sin pago",
-    patente: CITIZEN_PLATE,
-    calle: "Calle San Martín 220",
-    inspector: "Insp. Gómez",
-    monto: 18000,
-    estado: "Anulada",
-    fecha: "01/08/2026 14:20",
-  },
-  {
-    id: "INF-1005",
-    tipo: "DOC_VENCIDA",
-    tipoLabel: "Documentación vencida",
-    patente: "AC456EF",
-    calle: "Av. Rivadavia 4500",
-    inspector: "Insp. Diaz",
-    monto: 25000,
-    estado: "Pendiente",
-    fecha: "15/08/2026 11:47",
-  },
-  {
-    id: "INF-1006",
-    tipo: "EXCESO_VELOCIDAD",
-    tipoLabel: "Exceso de velocidad",
-    patente: "AD789GH",
-    calle: "Av. 9 de Julio 800",
-    inspector: "Insp. Romero",
-    monto: 45000,
-    estado: "Pendiente",
-    fecha: "14/08/2026 16:05",
-  },
-  {
-    id: "INF-1007",
-    tipo: "ESTAC_PROHIBIDO",
-    tipoLabel: "Estacionamiento prohibido",
-    patente: "AE321IJ",
-    calle: "Calle Belgrano 55",
-    inspector: "Insp. Gómez",
-    monto: 15000,
-    estado: "Confirmada",
-    fecha: "09/08/2026 10:00",
-  },
-];
-
 // ---------------------------------------------------------------------------
 // Primitivos de UI
 // ---------------------------------------------------------------------------
@@ -377,13 +293,20 @@ function Button({ variant = "primary", size = "md", className, ...props }) {
   return <button className={cx(base, sizes[size], variants[variant], className)} {...props} />;
 }
 
+// Si el contenido es un único input/select/textarea, el título queda asociado como <label>
+// (accesibilidad: lectores de pantalla y clic en el título enfocan el campo).
+const FIELD_CONTROLS = new Set(["input", "select", "textarea"]);
 function Field({ label, required, children, hint }) {
+  const autoId = useId();
+  const single = isValidElement(children) && FIELD_CONTROLS.has(children.type);
+  const id = single ? children.props.id ?? autoId : undefined;
+  const Title = single ? "label" : "p";
   return (
     <div className="mb-4">
-      <p className="mb-1.5 text-sm font-medium text-slate-700">
+      <Title htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-700">
         {label} {required && <span className="text-red-600">*</span>}
-      </p>
-      {children}
+      </Title>
+      {single ? cloneElement(children, { id }) : children}
       {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
     </div>
   );
@@ -393,10 +316,10 @@ function Modal({ open, onClose, title, children, wide }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:items-center">
-      <div className={cx("w-full rounded-2xl bg-white shadow-xl", wide ? "max-w-2xl" : "max-w-lg")}>
+      <div role="dialog" aria-modal="true" aria-label={title} className={cx("w-full rounded-2xl bg-white shadow-xl", wide ? "max-w-2xl" : "max-w-lg")}>
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-          <button onClick={onClose} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <button onClick={onClose} aria-label="Cerrar" className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
             <X size={18} />
           </button>
         </div>
@@ -738,13 +661,14 @@ function CitizenHome({ search, setSearch, trackCode, setTrackCode, trackResult, 
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600">
               <FileSignature size={16} />
             </div>
-            <p className="text-sm font-medium text-slate-700">¿Ya presentaste un descargo?</p>
+            <p className="text-sm font-medium text-slate-700">¿Querés saber cómo sigue tu infracción?</p>
           </div>
           <form onSubmit={onTrackSubmit} className="flex w-full gap-3 sm:w-auto">
             <input
               value={trackCode}
               onChange={(e) => setTrackCode(e.target.value)}
-              placeholder="Ingresá tu código APL-000000"
+              placeholder="Número de acta o patente"
+              aria-label="Número de acta o patente"
               className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-slate-400 sm:w-72"
             />
             <Button type="submit" variant="primary">
@@ -753,14 +677,19 @@ function CitizenHome({ search, setSearch, trackCode, setTrackCode, trackResult, 
           </form>
         </div>
         {trackResult !== null && (
-          <div className="mx-auto max-w-7xl px-6 pb-5">
-            {trackResult ? (
+          <div className="mx-auto max-w-7xl px-6 pb-5" role="status">
+            {trackResult.status === "found" ? (
               <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                Descargo <strong>{trackCode}</strong> encontrado. Estado: en revisión.
+                Acta <strong>{trackResult.infraction.id.slice(0, 8)}</strong> · {trackResult.infraction.tipoLabel} ·
+                patente {trackResult.infraction.patente}. Estado: <strong>{trackResult.infraction.estado}</strong>.
               </div>
             ) : (
               <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-                No encontramos ningún descargo con ese código.
+                {trackResult.status === "not-citizen"
+                  ? "Para consultar un trámite ingresá con tu usuario de vecino."
+                  : trackResult.status === "error"
+                    ? trackResult.message || "No se pudo consultar. Intentá nuevamente."
+                    : "No encontramos ninguna infracción tuya con ese número de acta o patente."}
               </div>
             )}
           </div>
@@ -2429,7 +2358,9 @@ function IngresoVehiculoForm({ infractions, operations, onSubmit, onDone }) {
 
   const options =
     origen === "INFRACTION"
-      ? infractions.map((i) => ({ id: i.id, label: `${i.patente} · ${i.tipoLabel} · ${i.fecha}` }))
+      ? infractions
+          .filter((i) => i.estado !== "Anulada")
+          .map((i) => ({ id: i.id, label: `${i.patente} · ${i.tipoLabel} · ${i.fecha}` }))
       : operations.map((o) => ({ id: o.id, label: `${o.tipo} · ${o.zona} · ${o.inicio}` }));
 
   const switchOrigen = (value) => {
@@ -3153,7 +3084,6 @@ function AuthenticatedApp({ role, username, onLogout }) {
   const [trackResult, setTrackResult] = useState(null);
 
   // El seguimiento de descargos por código sigue en mock: todavía no tiene endpoint.
-  const [mockInfractions] = useState(INITIAL_INFRACTIONS);
 
   const goMode = (m) => {
     if (m === "staff" && !canAccessStaff) return;
@@ -3451,10 +3381,25 @@ function AuthenticatedApp({ role, username, onLogout }) {
     },
   ];
 
-  const handleTrackSubmit = (e) => {
+  // Busca entre las infracciones reales del vecino por número de acta (completo o sus
+  // primeros caracteres) o por patente, y muestra el estado que informa el backend.
+  const handleTrackSubmit = async (e) => {
     e.preventDefault();
-    const found = mockInfractions.find((i) => i.appealCode === trackCode.trim());
-    setTrackResult(!!found);
+    const code = trackCode.trim().toLowerCase();
+    if (!code) return;
+    if (!isCitizen) {
+      setTrackResult({ status: "not-citizen" });
+      return;
+    }
+    try {
+      const data = await getMyInfractions();
+      const found = (data || [])
+        .map(mapApiInfraction)
+        .find((i) => i.id.toLowerCase().startsWith(code) || i.patente?.toLowerCase() === code);
+      setTrackResult(found ? { status: "found", infraction: found } : { status: "not-found" });
+    } catch (err) {
+      setTrackResult({ status: "error", message: err.message });
+    }
   };
 
   const renderCitizen = () => {

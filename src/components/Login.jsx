@@ -113,8 +113,9 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">{cfg.fieldLabel}</label>
+            <label htmlFor="login-username" className="mb-1.5 block text-sm font-medium text-slate-700">{cfg.fieldLabel}</label>
             <input
+              id="login-username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
@@ -125,8 +126,9 @@ export default function Login() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Contraseña</label>
+            <label htmlFor="login-password" className="mb-1.5 block text-sm font-medium text-slate-700">Contraseña</label>
             <input
+              id="login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

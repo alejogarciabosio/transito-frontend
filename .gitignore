@@ -25,3 +25,6 @@ dist-ssr
 
 # Variables de entorno locales (la plantilla es .env.example)
 .env
+
+# Reportes de cobertura
+coverage
