@@ -30,7 +30,7 @@ describe("Panel interno: acceso y dashboard", () => {
   test("el personal puede pasar al portal del vecino y volver", async () => {
     const { user } = await enterAs("admin");
     await user.click(screen.getAllByRole("button", { name: "Portal vecino" })[0]);
-    expect(await screen.findByText(/Mi Tránsito UADE/i)).toBeInTheDocument();
+    expect(await screen.findByText(/bajo control\./i)).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Panel interno" })[0]);
     expect(await screen.findByText(/Panel de indicadores/i)).toBeInTheDocument();
   });
@@ -39,7 +39,7 @@ describe("Panel interno: acceso y dashboard", () => {
     installFakeApi();
     const { user } = renderApp();
     await loginAs(user, ...CREDENTIALS.ciudadano);
-    await screen.findByText(/Mi Tránsito UADE/i);
+    await screen.findByText(/bajo control\./i);
     expect(screen.queryByRole("button", { name: "Panel interno" })).not.toBeInTheDocument();
   });
 });

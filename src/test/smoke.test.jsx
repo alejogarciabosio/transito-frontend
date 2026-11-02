@@ -6,5 +6,5 @@ test("smoke: el vecino ingresa y ve su portal", async () => {
   installFakeApi();
   const { user } = renderApp();
   await loginAs(user, ...CREDENTIALS.ciudadano);
-  expect(await screen.findByText(/Mi Tránsito UADE/i)).toBeInTheDocument();
+  expect(await screen.findByText(/bajo control\./i)).toBeInTheDocument();
 });
