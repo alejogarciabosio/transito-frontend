@@ -25,4 +25,5 @@ export const CREDENTIALS = {
   ciudadano: ["ciudadano1", "ciudadano123", "Vecino"],
   inspector: ["inspector1", "inspector123", "Personal municipal"],
   admin: ["admin1", "admin123", "Personal municipal"],
+  auditor: ["auditor1", "auditor123", "Personal municipal"],
 };

@@ -490,6 +490,7 @@ const ROLE_LABEL = {
   INSPECTOR: "Inspector",
   ADMINISTRADOR: "Administrador",
   CIUDADANO: "Vecino",
+  AUDITOR: "Auditor",
 };
 
 function Header({ mode, onModeChange, username, role, onLogout, canAccessStaff }) {
@@ -1270,6 +1271,11 @@ function Dashboard({ role, status, infractions, closures, operativos, accidents,
           Vista general de la actividad del módulo de Tránsito, Estacionamiento y Seguridad Vial.
         </p>
       </div>
+      {role === "AUDITOR" && (
+        <div role="note" className="mb-6 rounded-lg border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-700">
+          Ingresaste como auditor: podés consultar toda la información del módulo, pero no registrar ni modificar datos.
+        </div>
+      )}
       <ResourceStatus resource={status} loadingText="Cargando indicadores..." />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard icon={FileWarning} label="Infracciones activas" value={activeInfractions} tone="red" />
@@ -1278,7 +1284,7 @@ function Dashboard({ role, status, infractions, closures, operativos, accidents,
         <StatCard icon={Car} label="Vehículos en depósito" value={inDeposit} tone="slate" />
         <StatCard icon={Siren} label="Accidentes abiertos" value={openAccidents} tone="amber" />
       </div>
-      {role === "ADMINISTRADOR" && (
+      {(role === "ADMINISTRADOR" || role === "AUDITOR") && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard icon={FileSignature} label="Descargos por resolver" value={appealedInfractions} tone="sky" />
           <StatCard icon={TrafficCone} label="Cortes por evaluar" value={closuresToEvaluate} tone="amber" />

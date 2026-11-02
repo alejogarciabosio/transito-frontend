@@ -44,6 +44,25 @@ describe("Panel interno: acceso y dashboard", () => {
   });
 });
 
+describe("Auditor", () => {
+  test("ve el panel con datos reales en modo solo lectura", async () => {
+    const { user } = await enterAs("auditor");
+    expect(screen.getByText(/auditor1 · Auditor/)).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(/solo|no registrar/i);
+    expect(screen.queryByText(/no corresponde a tu rol/)).not.toBeInTheDocument();
+    expect(screen.getByText("Descargos por resolver")).toBeInTheDocument();
+    await tab(user, "Infracciones");
+    expect(await screen.findByText("AB123CD")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Registrar infracción/ })).not.toBeInTheDocument();
+    await user.click(screen.getByText("AB123CD"));
+    expect(screen.queryByRole("button", { name: "Marcar como firme" })).not.toBeInTheDocument();
+    for (const t of ["Operativos", "Accidentes", "Vehículos retenidos"]) {
+      await tab(user, t);
+      expect(screen.queryByRole("button", { name: /Nuevo operativo|Registrar accidente|Registrar ingreso/ })).not.toBeInTheDocument();
+    }
+  });
+});
+
 describe("Infracciones", () => {
   test("el inspector registra una infracción con agravante", async () => {
     const { user, calls } = await enterAs("inspector");

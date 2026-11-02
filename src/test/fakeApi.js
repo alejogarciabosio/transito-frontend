@@ -6,6 +6,7 @@ const USERS = {
   ciudadano1: { password: "ciudadano123", role: "CIUDADANO", nationalId: "30777888", userId: "u-1007" },
   inspector1: { password: "inspector123", role: "INSPECTOR", nationalId: "30111222", userId: "u-1001" },
   admin1: { password: "admin123", role: "ADMINISTRADOR", nationalId: "30222333", userId: "u-1002" },
+  auditor1: { password: "auditor123", role: "AUDITOR", nationalId: null, userId: "u-1003" },
 };
 
 const b64 = (o) => btoa(JSON.stringify(o)).replace(/=+$/, "");
@@ -201,7 +202,7 @@ export function installFakeApi(overrides = {}) {
     }
     // Personal: listados
     const lists = { "/infractions": "infractions", "/operations": "operations", "/accidents": "accidents", "/impoundments": "impoundments", "/street-closures": "closures", "/parking-sessions": "sessions" };
-    if (method === "GET" && lists[path]) return need("INSPECTOR", "ADMINISTRADOR") || json(200, db[lists[path]]);
+    if (method === "GET" && lists[path]) return need("INSPECTOR", "ADMINISTRADOR", "AUDITOR") || json(200, db[lists[path]]);
 
     // Infracciones
     if (key === "POST /infractions") {
