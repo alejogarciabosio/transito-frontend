@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useId, isValidElement, cloneElement } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useId, isValidElement, cloneElement } from "react";
 import {
   Search,
   FileWarning,
@@ -30,7 +30,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useAuth } from "./context/AuthContext";
+import { useAuth } from "./context/useAuth";
 import Login from "./components/Login";
 import {
   getMyInfractions,
@@ -313,10 +313,40 @@ function Field({ label, required, children, hint }) {
 }
 
 function Modal({ open, onClose, title, children, wide }) {
+  const dialogRef = useRef(null);
+  // onClose suele llegar como función nueva en cada render: se guarda en una referencia para que
+  // el efecto dependa solo de "open" y no le robe el foco al campo que se está escribiendo.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  // Esc cierra el diálogo y, al abrirse, el foco pasa adentro (y vuelve al botón que lo abrió).
+  useEffect(() => {
+    if (!open) return undefined;
+    const previous = document.activeElement;
+    dialogRef.current?.focus();
+    const onKey = (e) => {
+      if (e.key === "Escape") onCloseRef.current();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (previous instanceof HTMLElement) previous.focus();
+    };
+  }, [open]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:items-center">
-      <div role="dialog" aria-modal="true" aria-label={title} className={cx("w-full rounded-2xl bg-white shadow-xl", wide ? "max-w-2xl" : "max-w-lg")}>
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={cx("w-full rounded-2xl bg-white shadow-xl outline-none", wide ? "max-w-2xl" : "max-w-lg")}
+      >
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
           <button onClick={onClose} aria-label="Cerrar" className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -432,51 +462,46 @@ function StatCard({ icon: Icon, label, value, tone }) {
   );
 }
 
+// Ilustración decorativa del inicio: muestra la forma de la app, sin datos reales ni inventados.
 function PhoneMock() {
   return (
-    <div className="relative mx-auto w-full max-w-xs">
+    <div aria-hidden="true" className="relative mx-auto w-full max-w-xs">
       <div className="relative rounded-3xl border-8 border-slate-900 bg-slate-900 shadow-2xl">
         <div className="overflow-hidden rounded-2xl bg-white">
           <div className="h-6 bg-slate-900" />
           <div className="space-y-4 p-4">
             <div>
-              <p className="text-xs font-medium text-slate-400">HOLA, VECINO</p>
-              <p className="text-sm font-bold text-slate-900">Mi Tránsito UADE</p>
+              <p className="text-xs font-medium text-slate-400">PORTAL VECINO</p>
+              <p className="text-sm font-bold text-slate-900">Tránsito UADE</p>
             </div>
             <div className="relative h-32 overflow-hidden rounded-xl bg-gradient-to-br from-slate-100 to-slate-200">
               <MapPin className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600" size={22} />
             </div>
-            <div className="rounded-xl border border-slate-100 p-3">
-              <p className="text-sm font-semibold text-slate-900">Infracción en descargo</p>
-              <p className="text-xs text-slate-400">Av. Rivadavia 4500</p>
-              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full w-2/3 rounded-full bg-amber-500" />
-              </div>
-              <p className="mt-1 text-right text-xs font-medium text-amber-600">En revisión</p>
-            </div>
             <div className="space-y-2">
               <div className="flex items-center gap-2 rounded-lg border border-slate-100 p-2.5">
-                <ParkingCircle size={16} className="text-slate-400" />
+                <FileWarning size={16} className="text-red-500" />
                 <div>
-                  <p className="text-xs font-semibold text-slate-800">Zona Azul 12</p>
-                  <p className="text-xs text-slate-400">Vence en 24 min</p>
+                  <p className="text-xs font-semibold text-slate-800">Tus infracciones</p>
+                  <p className="text-xs text-slate-400">Estado y descargos</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 rounded-lg border border-slate-100 p-2.5">
-                <CheckCircle2 size={16} className="text-emerald-500" />
+                <ParkingCircle size={16} className="text-slate-400" />
                 <div>
-                  <p className="text-xs font-semibold text-slate-800">Descargo aceptado</p>
-                  <p className="text-xs text-slate-400">Infracción anulada</p>
+                  <p className="text-xs font-semibold text-slate-800">Estacionamiento medido</p>
+                  <p className="text-xs text-slate-400">Zonas y tarifas</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg border border-slate-100 p-2.5">
+                <TrafficCone size={16} className="text-orange-500" />
+                <div>
+                  <p className="text-xs font-semibold text-slate-800">Cortes de calle</p>
+                  <p className="text-xs text-slate-400">Desvíos vigentes</p>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-      <div className="absolute -right-4 top-10 hidden rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-lg sm:block">
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-          <span className="h-2 w-2 rounded-full bg-red-500" /> Corte de calle activo
-        </p>
       </div>
     </div>
   );
@@ -559,12 +584,23 @@ function Header({ mode, onModeChange, username, role, onLogout, canAccessStaff }
   );
 }
 
-function Footer() {
+const FOOTER_LINKS = [
+  { label: "Mis infracciones", target: "infracciones" },
+  { label: "Estacionamiento medido", target: "estacionamiento" },
+  { label: "Cortes de calle", target: "cortes" },
+  { label: "Vehículos retenidos", target: "vehiculos" },
+];
+
+function Footer({ onNavigate }) {
+  const go = (target) => {
+    onNavigate(target);
+    window.scrollTo?.({ top: 0 });
+  };
   return (
     <footer className="border-t border-slate-200 bg-white">
       <div className="mx-auto max-w-7xl px-6 py-12">
-        <div className="grid gap-10 md:grid-cols-3">
-          <div className="md:col-span-1">
+        <div className="grid gap-10 md:grid-cols-2">
+          <div>
             <div className="flex items-center gap-2 text-slate-900">
               <TrafficCone size={20} />
               <span className="text-lg font-bold">Tránsito UADE</span>
@@ -578,30 +614,21 @@ function Footer() {
               <p>Av. Independencia 1100, CABA</p>
             </div>
           </div>
-          <div>
+          <nav aria-label="Trámites">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Trámites</p>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li>Mis infracciones</li>
-              <li>Presentar descargo</li>
-              <li>Estacionamiento medido</li>
-              <li>Vehículos retenidos</li>
+              {FOOTER_LINKS.map((l) => (
+                <li key={l.target}>
+                  <button type="button" onClick={() => go(l.target)} className="hover:text-slate-900 hover:underline">
+                    {l.label}
+                  </button>
+                </li>
+              ))}
             </ul>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Institucional</p>
-            <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li>Intendencia</li>
-              <li>Transparencia</li>
-              <li>Prensa</li>
-              <li>Accesibilidad</li>
-            </ul>
-          </div>
+          </nav>
         </div>
-        <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-slate-100 pt-6 text-xs text-slate-400 sm:flex-row">
+        <div className="mt-10 border-t border-slate-100 pt-6 text-xs text-slate-400">
           <p>© 2026 Municipalidad de Ciudad UADE. Todos los derechos reservados.</p>
-          <p className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Todos los servicios operativos
-          </p>
         </div>
       </div>
     </footer>
@@ -3538,12 +3565,12 @@ function AuthenticatedApp({ role, username, onLogout }) {
       {mode === "ciudadano" ? (
         <>
           {renderCitizen()}
-          <Footer />
+          <Footer onNavigate={setCitizenView} />
         </>
       ) : (
         <div className="flex min-h-screen">
           <StaffSidebar active={staffView} onChange={setStaffView} />
-          <div className="flex-1 bg-slate-50">
+          <div className="min-w-0 flex-1 bg-slate-50">
             <div className="border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
               <select value={staffView} onChange={(e) => setStaffView(e.target.value)} className={inputCls}>
                 {STAFF_NAV.map((i) => (

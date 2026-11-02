@@ -6,11 +6,12 @@ async function enterAsCitizen(overrides) {
   const api = installFakeApi(overrides);
   const { user } = renderApp();
   await loginAs(user, ...CREDENTIALS.ciudadano);
-  await screen.findByText(/Mi Tránsito UADE/i);
+  await screen.findByText(/bajo control\./i);
   return { user, ...api };
 }
 
-const card = (name) => screen.getAllByText(name, { exact: true })[0];
+// Las tarjetas del inicio son botones; el pie repite los nombres, por eso se toma el primero (la tarjeta).
+const card = (name) => screen.getAllByRole("button", { name: new RegExp(name) })[0];
 
 describe("Login", () => {
   test("credenciales inválidas muestran el error y no ingresan", async () => {
@@ -18,7 +19,7 @@ describe("Login", () => {
     const { user } = renderApp();
     await loginAs(user, "ciudadano1", "mala", "Vecino");
     expect(await screen.findByText(/incorrectos/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Mi Tránsito UADE/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bajo control\./i)).not.toBeInTheDocument();
   });
 
   test("si el backend no responde, se informa el problema de conexión", async () => {

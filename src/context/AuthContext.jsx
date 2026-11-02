@@ -1,7 +1,7 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { apiFetch, setUnauthorizedHandler, SESSION_EXPIRED_MESSAGE } from "../services/api";
 
-const AuthContext = createContext(null);
+import { AuthContext } from "./auth-context";
 
 const SESSION_KEY = "transito_auth";
 
@@ -61,12 +61,25 @@ export function AuthProvider({ children }) {
     return () => setUnauthorizedHandler(null);
   }, [logout]);
 
-  const isExpired = !auth || Date.now() > auth.expiresAt;
+  // Cuando se cumple el vencimiento del token (no hay refresh) se cierra la sesión sola,
+  // sin esperar a que el próximo pedido reciba un 401.
+  useEffect(() => {
+    if (!auth) return undefined;
+    const MAX_TIMEOUT = 2 ** 31 - 1;
+    const timer = setTimeout(
+      () => {
+        logout();
+        setNotice(SESSION_EXPIRED_MESSAGE);
+      },
+      Math.min(MAX_TIMEOUT, Math.max(0, auth.expiresAt - Date.now()))
+    );
+    return () => clearTimeout(timer);
+  }, [auth, logout]);
 
   return (
     <AuthContext.Provider
       value={{
-        isAuthenticated: !isExpired,
+        isAuthenticated: !!auth,
         role: auth?.role ?? null,
         username: auth?.username ?? null,
         notice,
@@ -77,10 +90,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth debe usarse dentro de <AuthProvider>");
-  return ctx;
 }

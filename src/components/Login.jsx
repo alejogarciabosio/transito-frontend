@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ShieldCheck, AlertCircle, TrafficCone, User } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { ApiError } from "../services/api";
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
