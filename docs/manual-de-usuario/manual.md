@@ -172,9 +172,8 @@ en revisión), **Confirmada** (quedó firme), **Anulada** (se dejó sin efecto).
 1. Abrí el detalle de una infracción en estado **Pendiente** (C4).
 2. Tocá **Presentar descargo**.
 3. Escribí tus razones en **Motivo del descargo** (obligatorio).
-4. Opcional: en **Adjuntar respaldo (opcional)** tocá **Hacé clic para subir archivos** y elegí tus archivos.
-5. Tocá **Enviar descargo**.
-6. En la confirmación, tocá **Volver a mis infracciones**.
+4. Tocá **Enviar descargo**.
+5. En la confirmación, tocá **Volver a mis infracciones**.
 
 ![Formulario de descargo](img/c12-descargo-form.png)
 
@@ -193,7 +192,9 @@ en revisión), **Confirmada** (quedó firme), **Anulada** (se dejó sin efecto).
   ya fue resuelta). Cerrá el panel y volvé a abrir la lista.
 - Error 400: falta el motivo o es demasiado largo. Completalo y reintentá.
 
-> **Aviso:** por el momento, los archivos adjuntos pueden no quedar guardados. Si tenés documentación, mencionala también en el motivo.
+> **Funcionalidad pendiente — adjuntos:** por ahora el descargo no recibe archivos. Debajo del motivo, el formulario
+> muestra el recuadro *"Adjuntos: próximamente"*, que indica enviar la documentación por mesa de entradas citando el
+> número de acta. Podés mencionar esa documentación en el motivo.
 
 ## C6. Ver cómo se resolvió mi descargo
 
@@ -508,11 +509,11 @@ o alguien ya lo activó).
 ![Marcar falta de pago](img/i61-falta-pago.png)
 
 **Resultado esperado:** se crea una infracción "Estacionamiento medido sin pago" en estado **Pendiente**, visible en
-**Infracciones**.
+**Infracciones**. En la tabla, la sesión pasa a mostrar **Sin pagar · infracción generada** y ya no ofrece el botón
+**Marcar falta de pago** (se admite una sola infracción por sesión).
 
-**Errores frecuentes:** error 409: esa sesión ya tiene una infracción por falta de pago.
-
-> **Aviso:** por el momento, la sesión puede seguir mostrándose como **Sin pagar** después de marcarla. Revisá en **Infracciones** que la infracción se haya creado.
+**Errores frecuentes:** error 409: esa sesión ya tiene una infracción por falta de pago (por ejemplo, otro inspector la
+marcó mientras tenías la pantalla abierta). Se muestra el detalle del error; recargá la pantalla.
 
 ## I16. Consultar el Portal vecino como personal
 
@@ -547,10 +548,7 @@ por evaluar**: son sus tareas pendientes.
 ## A3. Aceptar un descargo (anular la infracción)
 
 1. En **Infracciones**, filtrá por **Apelada** y tocá la infracción.
-2. Leé el recuadro **El vecino presentó un descargo**.
-
-   > **Aviso:** por el momento, el texto del descargo puede no mostrarse en esta vista.
-
+2. Leé el recuadro **El vecino presentó un descargo**, que muestra el texto que escribió el vecino.
 3. Tocá **Aceptar descargo (anular)**.
 4. Escribí el **Motivo de la anulación** (obligatorio, hasta 1000 caracteres).
 5. Tocá **Confirmar anulación** (o **Volver** para arrepentirte).
@@ -743,7 +741,8 @@ cargues una tarifa (A15).
 
 **Resultado esperado:** la tarifa deja de mostrarse en la zona. No se puede deshacer desde la pantalla.
 
-> **Aviso:** una tarifa no se puede eliminar mientras haya sesiones de estacionamiento en curso en esa zona (error 409). Intentá de nuevo cuando terminen.
+**Errores frecuentes:** *"No se puede borrar: hay sesiones activas en esa zona/tarifa. Esperá a que se cierren e
+intentá de nuevo."* (error 409): la zona tiene sesiones de estacionamiento en curso. Volvé a intentarlo cuando terminen.
 
 ## A18. Consultar operativos, accidentes y sesiones de estacionamiento
 
