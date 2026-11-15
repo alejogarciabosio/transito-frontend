@@ -129,7 +129,7 @@ export function AuthenticatedApp({ role, username, onLogout }) {
     if (staffView === "estacionamiento") {
       reloadStaffZones();
       reloadSessions();
-      reloadStaffInfractions(); // para saber qué sesiones ya tienen su infracción por falta de pago
+      void reloadStaffInfractions(); // reload ya captura sus errores; para saber qué sesiones ya tienen su infracción por falta de pago
     }
   }, [
     mode,
