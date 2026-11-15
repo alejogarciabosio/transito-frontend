@@ -193,8 +193,7 @@ en revisión), **Confirmada** (quedó firme), **Anulada** (se dejó sin efecto).
   ya fue resuelta). Cerrá el panel y volvé a abrir la lista.
 - Error 400: falta el motivo o es demasiado largo. Completalo y reintentá.
 
-> **Importante:** por ahora los archivos adjuntos solo se listan en pantalla; **no se envían al sistema**. El texto del
-> motivo sí queda registrado. Si tenés documentación, mencionala en el motivo.
+> **Aviso:** por el momento, los archivos adjuntos pueden no quedar guardados. Si tenés documentación, mencionala también en el motivo.
 
 ## C6. Ver cómo se resolvió mi descargo
 
@@ -348,7 +347,7 @@ el DNI, el vecino la ve en **Mis infracciones**.
 
 ![Descripción de los hechos](img/i11-ia-descripcion.png)
 
-![Sugerencia de la IA aplicada al formulario](img/i13-ia-sugerencia.png)
+![Sugerencia de la IA aplicada al formulario (entorno de prueba)](img/i13-ia-sugerencia.png)
 
 **Resultado esperado:** el **Tipo de infracción** y los **Agravantes** quedan pre-completados y el **Importe calculado**
 se actualiza.
@@ -511,8 +510,9 @@ o alguien ya lo activó).
 **Resultado esperado:** se crea una infracción "Estacionamiento medido sin pago" en estado **Pendiente**, visible en
 **Infracciones**.
 
-**Errores frecuentes:** error 409 *"La sesión … ya tiene una infracción por falta de pago"*: esa sesión ya fue marcada.
-La fila puede seguir mostrando el botón; confirmá en **Infracciones** que la infracción existe y no la marques de nuevo.
+**Errores frecuentes:** error 409: esa sesión ya tiene una infracción por falta de pago.
+
+> **Aviso:** por el momento, la sesión puede seguir mostrándose como **Sin pagar** después de marcarla. Revisá en **Infracciones** que la infracción se haya creado.
 
 ## I16. Consultar el Portal vecino como personal
 
@@ -548,6 +548,9 @@ por evaluar**: son sus tareas pendientes.
 
 1. En **Infracciones**, filtrá por **Apelada** y tocá la infracción.
 2. Leé el recuadro **El vecino presentó un descargo**.
+
+   > **Aviso:** por el momento, el texto del descargo puede no mostrarse en esta vista.
+
 3. Tocá **Aceptar descargo (anular)**.
 4. Escribí el **Motivo de la anulación** (obligatorio, hasta 1000 caracteres).
 5. Tocá **Confirmar anulación** (o **Volver** para arrepentirte).
@@ -740,8 +743,7 @@ cargues una tarifa (A15).
 
 **Resultado esperado:** la tarifa deja de mostrarse en la zona. No se puede deshacer desde la pantalla.
 
-**Errores frecuentes:** error 409 *"No se puede eliminar la tarifa …: hay sesiones activas dependientes en la zona"*:
-hay autos estacionados en esa zona en este momento. Esperá a que terminen las sesiones en curso y volvé a intentar.
+> **Aviso:** una tarifa no se puede eliminar mientras haya sesiones de estacionamiento en curso en esa zona (error 409). Intentá de nuevo cuando terminen.
 
 ## A18. Consultar operativos, accidentes y sesiones de estacionamiento
 
@@ -754,10 +756,10 @@ operativos, no registra ni verifica accidentes y no marca faltas de pago. La des
 
 # Auditor (rol AUDITOR)
 
-El auditor controla: puede ver toda la información del Panel interno, pero no registrar ni modificar nada.
-
-> Las capturas de este rol se tomaron en el entorno de prueba. Los usuarios auditores los crea el equipo del
-> Módulo 7 (Usuarios) y se entregan junto con las demás credenciales.
+> **Nota:** el rol Auditor solo existe con el login de M1 (Usuarios); no hay un usuario auditor en el entorno de
+> prueba del módulo, por eso esta sección no tiene capturas. El auditor tiene **acceso de lectura** a todo el Panel
+> interno: Dashboard, Infracciones, Cortes de calle, Operativos, Accidentes, Vehículos retenidos y Estacionamiento
+> medido. No puede registrar, resolver ni modificar datos.
 
 ## U1. Ingresar como auditor y ver el panel
 
@@ -765,23 +767,18 @@ El auditor controla: puede ver toda la información del Panel interno, pero no r
 2. Se abre el **Dashboard** con el aviso *"Ingresaste como auditor: podés consultar toda la información del módulo, pero
    no registrar ni modificar datos."*
 
-![Panel del auditor](img/u01-dashboard-auditor.png)
-
-**Resultado esperado:** ves todos los indicadores, incluidos **Descargos por resolver** y **Cortes por evaluar**.
+**Resultado esperado:** ves todos los indicadores, incluidos **Descargos por resolver** y **Cortes por evaluar** (igual
+que el administrador en A1).
 
 ## U2. Consultar infracciones
 
 1. Tocá **Infracciones**, usá los filtros y tocá una fila para ver el detalle.
 
-![Infracciones vistas por el auditor](img/u02-infracciones-auditor.png)
-
-**Resultado esperado:** ves la tabla y el detalle completo, sin botones de acción.
+**Resultado esperado:** ves la tabla y el detalle completo (como en I2 e I3), sin botones de acción.
 
 ## U3. Consultar cortes, operativos, accidentes, vehículos y estacionamiento
 
 1. Tocá la sección que quieras en el menú.
-
-![Estacionamiento visto por el auditor](img/u04-estacionamiento-auditor.png)
 
 **Resultado esperado:** ves las tablas y los detalles sin los botones **Evaluar**, **Activar**, **Cerrar**,
 **Verificar**, **Liberar vehículo**, **Nueva zona**, etc. Si por algún motivo intentás una acción, el sistema responde
@@ -824,7 +821,6 @@ API (documentada en Swagger) o desde otros módulos:
 | Editar los datos de un accidente | Inspector | `PATCH /accidents/{id}`. En la web solo se usa para **Verificar**. |
 | Crear solicitudes de corte de calle | Módulos Obras y Ambiente | Llegan automáticamente por mensajería (Core). En la web solo se evalúan. |
 | Consultar la bandeja de eventos enviados a Core | Administrador, Auditor | `GET /admin/outbox`. Uso técnico. |
-| Ver el texto de un descargo desde el panel | — | El detalle del panel muestra *"El texto del descargo no está disponible en esta vista."* |
 
 # Glosario
 
@@ -866,14 +862,8 @@ Solo se ven las infracciones cargadas con tu DNI. Si el inspector no cargó el D
 **¿Puedo pagar la multa desde acá?**
 No. Cuando la infracción queda **Confirmada**, la boleta se genera en el módulo de Rentas.
 
-**¿Se envían los archivos que adjunto en el descargo?**
-Todavía no: se listan en pantalla pero solo se registra el texto del motivo.
-
 **¿Por qué una zona dice "Sin tarifa vigente" o "Tarifa a confirmar"?**
 No tiene una tarifa cuyas fechas incluyan el día de hoy. El administrador debe cargarla (A15).
-
-**Marqué una falta de pago y la sesión sigue diciendo "Sin pagar".**
-Es normal: la infracción se crea igual en **Infracciones**. No la marques de nuevo (daría error 409).
 
 **¿Qué pasa si dos personas resuelven lo mismo a la vez?**
 La primera acción se guarda; la segunda recibe un error 409. Cerrá la ventana y mirá el estado actualizado.
