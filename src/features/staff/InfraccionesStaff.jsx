@@ -59,7 +59,7 @@ function RegistrarInfraccionForm({ onSubmit }) {
           <p className="flex items-center gap-2 font-semibold text-red-700">
             <AlertCircle size={16} /> No se pudo registrar
           </p>
-          <p className="mt-1 text-red-600">{error}</p>
+          <p className="mt-1 text-red-700">{error}</p>
         </div>
       )}
       <div className="grid gap-x-4 sm:grid-cols-2">
@@ -100,7 +100,7 @@ function RegistrarInfraccionForm({ onSubmit }) {
               onClick={() => toggleAgravante(a.code)}
               className={cx(
                 "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                agravantes.includes(a.code) ? "border-red-600 bg-red-50 text-red-600" : "border-slate-200 text-slate-500 hover:border-slate-300"
+                agravantes.includes(a.code) ? "border-red-600 bg-red-50 text-red-700" : "border-slate-200 text-slate-600 hover:border-slate-300"
               )}
             >
               {a.label} (+{a.pct * 100}%)
@@ -109,7 +109,7 @@ function RegistrarInfraccionForm({ onSubmit }) {
         </div>
       </Field>
       <div className="mt-2 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-        <span className="text-sm text-slate-500">Importe calculado</span>
+        <span className="text-sm text-slate-600">Importe calculado</span>
         <span className="text-lg font-bold text-slate-900">{formatCurrency(monto)}</span>
       </div>
       <Button type="submit" variant="primary" className="mt-4 w-full" disabled={submitting}>
@@ -179,7 +179,7 @@ export function InfraccionesStaff({ infractions, resource, role, onCreate, onCon
         }
       />
       <div className="flex flex-wrap items-center gap-2">
-        <Filter size={14} className="text-slate-400" />
+        <Filter size={14} className="text-slate-500" />
         {["Todos", "Pendiente", "Apelada", "Confirmada", "Anulada"].map((e) => (
           <button
             key={e}
@@ -240,7 +240,7 @@ export function InfraccionesStaff({ infractions, resource, role, onCreate, onCon
               </div>
             )}
             {actionError && (
-              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-600">
+              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-700">
                 <p className="flex items-center gap-2">
                   <AlertCircle size={16} /> {actionError}
                 </p>

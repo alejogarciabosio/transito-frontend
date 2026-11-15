@@ -5,10 +5,10 @@ export function StaffSidebar({ active, onChange }) {
   return (
     <aside className="hidden w-60 shrink-0 border-r border-slate-800 bg-slate-900 lg:block">
       <div className="px-5 py-6">
-        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Panel interno</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Panel interno</p>
         <p className="mt-1 text-sm text-slate-300">Dirección de Tránsito</p>
       </div>
-      <nav className="space-y-1 px-3">
+      <nav aria-label="Secciones del panel interno" className="space-y-1 px-3">
         {STAFF_NAV.map((item) => (
           <button
             key={item.id}

@@ -40,8 +40,8 @@ export function Dashboard({ role, status, infractions, closures, operativos, acc
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">Panel de indicadores</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-slate-900">Panel de indicadores</h1>
+        <p className="mt-1 text-sm text-slate-600">
           Vista general de la actividad del módulo de Tránsito, Estacionamiento y Seguridad Vial.
         </p>
       </div>
@@ -80,10 +80,10 @@ export function Dashboard({ role, status, infractions, closures, operativos, acc
         <div className="rounded-2xl border border-slate-200 bg-white p-6">
           <p className="mb-4 text-sm font-semibold text-slate-700">Sesiones de estacionamiento abiertas</p>
           <div className="space-y-4">
-            {openSessionsByZone.length === 0 && <p className="text-xs text-slate-400">No hay zonas activas.</p>}
+            {openSessionsByZone.length === 0 && <p className="text-xs text-slate-500">No hay zonas activas.</p>}
             {openSessionsByZone.map((z) => (
               <div key={z.id}>
-                <div className="flex justify-between text-xs text-slate-500">
+                <div className="flex justify-between text-xs text-slate-600">
                   <span>{z.nombre}</span>
                   <span>{z.abiertas}</span>
                 </div>

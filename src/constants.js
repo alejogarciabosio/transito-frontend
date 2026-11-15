@@ -43,14 +43,14 @@ export const REQUISITO_LABEL = {
 export const BADGE_TONES = {
   slate: "bg-slate-100 text-slate-600",
   emerald: "bg-emerald-100 text-emerald-700",
-  red: "bg-red-100 text-red-600",
+  red: "bg-red-100 text-red-700",
   amber: "bg-amber-100 text-amber-700",
   sky: "bg-sky-100 text-sky-700",
   orange: "bg-orange-100 text-orange-700",
 };
 
 export const TONE_TEXT = {
-  red: "text-red-600 bg-red-50",
+  red: "text-red-700 bg-red-50",
   orange: "text-orange-600 bg-orange-50",
   sky: "text-sky-600 bg-sky-50",
   slate: "text-slate-700 bg-slate-100",

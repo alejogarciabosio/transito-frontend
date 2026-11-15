@@ -26,9 +26,9 @@ export function EstacionamientoCiudadano({ resource, onBack }) {
                     <Badge tone="slate">Tarifa a confirmar</Badge>
                   )}
                 </div>
-                <p className="mt-2 text-sm text-slate-500">Horario: {z.allowedHours}</p>
+                <p className="mt-2 text-sm text-slate-600">Horario: {z.allowedHours}</p>
                 {z.tariff?.validTo && (
-                  <p className="mt-1 text-xs text-slate-400">Tarifa vigente hasta el {formatLocalDate(z.tariff.validTo)}</p>
+                  <p className="mt-1 text-xs text-slate-500">Tarifa vigente hasta el {formatLocalDate(z.tariff.validTo)}</p>
                 )}
               </div>
             ))}

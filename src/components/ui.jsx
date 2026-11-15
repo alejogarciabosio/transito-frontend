@@ -25,7 +25,7 @@ export function Button({ variant = "primary", size = "md", className, ...props }
     accent: "bg-red-600 text-white hover:bg-red-700",
     secondary: "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
     ghost: "text-slate-600 hover:bg-slate-100",
-    danger: "border border-red-200 bg-red-50 text-red-600 hover:bg-red-100",
+    danger: "border border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
     success: "bg-emerald-600 text-white hover:bg-emerald-700",
   };
   return <button className={cx(base, sizes[size], variants[variant], className)} {...props} />;
@@ -43,10 +43,10 @@ export function Field({ label, required, children, hint }) {
   return (
     <div className="mb-4">
       <Title htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-700">
-        {label} {required && <span className="text-red-600">*</span>}
+        {label} {required && <span className="text-red-700">*</span>}
       </Title>
       {single ? cloneElement(children, { id }) : children}
-      {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
   );
 }
@@ -87,8 +87,8 @@ export function Modal({ open, onClose, title, children, wide }) {
         className={cx("w-full rounded-2xl bg-white shadow-xl outline-none", wide ? "max-w-2xl" : "max-w-lg")}
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-          <button onClick={onClose} aria-label="Cerrar" className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <button onClick={onClose} aria-label="Cerrar" className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-600">
             <X size={18} />
           </button>
         </div>
@@ -102,12 +102,12 @@ export function Modal({ open, onClose, title, children, wide }) {
 
 export function DataTable({ columns, data, onRowClick, keyField = "id", emptyLabel = "Sin registros" }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+    <div tabIndex={0} role="group" aria-label="Tabla de datos (desplazable)" className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50">
           <tr>
             {columns.map((col) => (
-              <th key={col.header} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <th key={col.header} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
                 {col.header}
               </th>
             ))}
@@ -116,7 +116,7 @@ export function DataTable({ columns, data, onRowClick, keyField = "id", emptyLab
         <tbody className="divide-y divide-slate-100">
           {data.length === 0 && (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">
+              <td colSpan={columns.length} className="px-4 py-10 text-center text-slate-500">
                 {emptyLabel}
               </td>
             </tr>
@@ -144,8 +144,8 @@ export function SectionToolbar({ title, desc, actions }) {
   return (
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">{title}</h2>
-        {desc && <p className="mt-1 text-sm text-slate-500">{desc}</p>}
+        <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+        {desc && <p className="mt-1 text-sm text-slate-600">{desc}</p>}
       </div>
       {actions}
     </div>
@@ -155,18 +155,18 @@ export function SectionToolbar({ title, desc, actions }) {
 export function SectionHeader({ eyebrow, title, desc }) {
   return (
     <div>
-      <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-red-600">
+      <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-red-700">
         <span className="h-px w-6 bg-red-600" /> {eyebrow}
       </p>
-      <h2 className="text-3xl font-bold text-slate-900">{title}</h2>
-      {desc && <p className="mt-2 max-w-2xl text-slate-500">{desc}</p>}
+      <h1 className="text-3xl font-bold text-slate-900">{title}</h1>
+      {desc && <p className="mt-2 max-w-2xl text-slate-600">{desc}</p>}
     </div>
   );
 }
 
 export function EmptyState({ text }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 py-16 text-center text-sm text-slate-400">
+    <div className="rounded-2xl border border-dashed border-slate-200 py-16 text-center text-sm text-slate-500">
       {text}
     </div>
   );
@@ -174,7 +174,7 @@ export function EmptyState({ text }) {
 
 export function BackLink({ onClick }) {
   return (
-    <button onClick={onClick} className="mb-6 flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+    <button onClick={onClick} className="mb-6 flex min-h-10 items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-800">
       <ChevronLeft size={16} /> Volver al inicio
     </button>
   );
@@ -183,7 +183,7 @@ export function BackLink({ onClick }) {
 export function Row({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <dt className="text-slate-400">{label}</dt>
+      <dt className="text-slate-500">{label}</dt>
       <dd className="text-right font-medium text-slate-800">{value}</dd>
     </div>
   );
@@ -196,7 +196,7 @@ export function StatCard({ icon: Icon, label, value, tone }) {
         <Icon size={17} />
       </div>
       <p className="text-2xl font-bold text-slate-900">{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{label}</p>
+      <p className="mt-1 text-xs text-slate-600">{label}</p>
     </div>
   );
 }
@@ -205,7 +205,7 @@ export function StatCard({ icon: Icon, label, value, tone }) {
 // Devuelve null cuando hay datos para mostrar.
 export function ResourceStatus({ resource, loadingText }) {
   if (resource.loading && !resource.loaded) {
-    return <p className="text-sm text-slate-500">{loadingText}</p>;
+    return <p className="text-sm text-slate-600">{loadingText}</p>;
   }
   if (resource.error) {
     return (
@@ -231,7 +231,7 @@ export function ErrorNote({ title, children }) {
           <AlertCircle size={16} /> {title}
         </p>
       )}
-      <p className={cx("text-red-600", title && "mt-1")}>{children}</p>
+      <p className={cx("text-red-700", title && "mt-1")}>{children}</p>
     </div>
   );
 }

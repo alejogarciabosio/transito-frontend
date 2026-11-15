@@ -15,21 +15,21 @@ export function Footer({ onNavigate }) {
               <TrafficCone size={20} />
               <span className="text-lg font-bold">Tránsito UADE</span>
             </div>
-            <p className="mt-3 max-w-sm text-sm text-slate-500">
+            <p className="mt-3 max-w-sm text-sm text-slate-600">
               Dirección de Tránsito, Estacionamiento y Seguridad Vial. Municipalidad de Ciudad UADE — Gestión 2026.
             </p>
-            <div className="mt-4 space-y-1 text-sm text-slate-500">
+            <div className="mt-4 space-y-1 text-sm text-slate-600">
               <p>147 — Línea Municipal</p>
               <p>transito@ciudaduade.gob.ar</p>
               <p>Av. Independencia 1100, CABA</p>
             </div>
           </div>
           <nav aria-label="Trámites">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Trámites</p>
-            <ul className="mt-3 space-y-2 text-sm text-slate-600">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trámites</p>
+            <ul className="mt-3 space-y-1 text-sm text-slate-600">
               {FOOTER_LINKS.map((l) => (
                 <li key={l.target}>
-                  <button type="button" onClick={() => go(l.target)} className="hover:text-slate-900 hover:underline">
+                  <button type="button" onClick={() => go(l.target)} className="inline-flex min-h-8 items-center hover:text-slate-900 hover:underline">
                     {l.label}
                   </button>
                 </li>
@@ -37,7 +37,7 @@ export function Footer({ onNavigate }) {
             </ul>
           </nav>
         </div>
-        <div className="mt-10 border-t border-slate-100 pt-6 text-xs text-slate-400">
+        <div className="mt-10 border-t border-slate-100 pt-6 text-xs text-slate-500">
           <p>© 2026 Municipalidad de Ciudad UADE. Todos los derechos reservados.</p>
         </div>
       </div>
