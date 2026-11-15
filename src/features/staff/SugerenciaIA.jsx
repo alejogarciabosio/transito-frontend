@@ -68,10 +68,10 @@ export function SugerenciaIA({ onApply }) {
         className={inputCls}
       />
       <div id="ia-descripcion-ayuda" className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span className={tooLong ? "font-medium text-red-600" : "text-slate-400"}>
+        <span className={tooLong ? "font-medium text-red-600" : "text-slate-600"}>
           {tooLong ? `La descripción no puede superar los ${SUGGESTION_MAX_LENGTH} caracteres.` : "Se pre-completan el tipo y los agravantes; vos confirmás."}
         </span>
-        <span className={tooLong ? "font-medium text-red-600" : "text-slate-400"} aria-label="Caracteres usados">
+        <span className={tooLong ? "font-medium text-red-600" : "text-slate-600"} aria-label="Caracteres usados">
           {len}/{SUGGESTION_MAX_LENGTH}
         </span>
       </div>
