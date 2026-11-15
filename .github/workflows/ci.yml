@@ -60,3 +60,25 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 14
+
+  sonarcloud:
+    name: Análisis SonarCloud (Quality Gate)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tests con cobertura (lcov)
+        run: npm run test:coverage
+      - name: Análisis SonarCloud
+        uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8.5.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

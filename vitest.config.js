@@ -10,7 +10,7 @@ export default defineConfig({
     restoreMocks: true,
     coverage: {
       provider: "v8",
-      reporter: ["text-summary", "text", "html"],
+      reporter: ["text-summary", "text", "html", "lcov"],
       include: ["src/**/*.{js,jsx}"],
       exclude: ["src/test/**", "src/main.jsx"],
       thresholds: { lines: 85, statements: 85, functions: 85, branches: 75 },
