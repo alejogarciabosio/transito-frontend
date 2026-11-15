@@ -70,7 +70,7 @@ function IngresoVehiculoForm({ infractions, operations, onSubmit, onDone }) {
               onClick={() => switchOrigen(code)}
               className={cx(
                 "flex-1 rounded-lg border px-3 py-2 text-sm font-medium",
-                origen === code ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-500"
+                origen === code ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600"
               )}
             >
               {label}
@@ -150,7 +150,7 @@ function LiberarVehiculoForm({ vehicle, onSubmit, onDone }) {
   return (
     <div>
       <p className="mb-2 mt-4 text-sm font-medium text-slate-700">
-        Requisitos verificados <span className="text-red-600">*</span>
+        Requisitos verificados <span className="text-red-700">*</span>
       </p>
       <div className="space-y-2">
         {requirements.map(([code, label]) => (
@@ -160,7 +160,7 @@ function LiberarVehiculoForm({ vehicle, onSubmit, onDone }) {
           </label>
         ))}
       </div>
-      <p className="mt-1 text-xs text-slate-400">Marcá al menos un requisito verificado para poder liberar el vehículo.</p>
+      <p className="mt-1 text-xs text-slate-500">Marcá al menos un requisito verificado para poder liberar el vehículo.</p>
       <div className="mt-4 grid gap-x-4 sm:grid-cols-2">
         <Field
           label="Costo de acarreo y estadía"
@@ -301,7 +301,7 @@ export function VehiculosStaff({ impounded, resource, role, infractions, operati
               </>
             )}
             {detail.estado === "Retenido" && !canRelease && (
-              <p className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-500">La liberación la autoriza un administrador.</p>
+              <p className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">La liberación la autoriza un administrador.</p>
             )}
             {detail.estado === "Liberado" && (
               <div className="mt-4 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-700">

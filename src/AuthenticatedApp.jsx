@@ -497,23 +497,23 @@ export function AuthenticatedApp({ role, username, onLogout }) {
       <Header mode={mode} onModeChange={goMode} username={username} role={role} onLogout={onLogout} canAccessStaff={canAccessStaff} />
       {mode === "ciudadano" ? (
         <>
-          {renderCitizen()}
+          <main id="contenido">{renderCitizen()}</main>
           <Footer onNavigate={setCitizenView} />
         </>
       ) : (
         <div className="flex min-h-screen">
           <StaffSidebar active={staffView} onChange={setStaffView} />
           <div className="min-w-0 flex-1 bg-slate-50">
-            <div className="border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
-              <select value={staffView} onChange={(e) => setStaffView(e.target.value)} className={inputCls}>
+            <nav aria-label="Secciones (móvil)" className="border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
+              <select aria-label="Sección del panel interno" value={staffView} onChange={(e) => setStaffView(e.target.value)} className={inputCls}>
                 {STAFF_NAV.map((i) => (
                   <option key={i.id} value={i.id}>
                     {i.label}
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="p-6 lg:p-10">{renderStaff()}</div>
+            </nav>
+            <main id="contenido" className="p-6 lg:p-10">{renderStaff()}</main>
           </div>
         </div>
       )}

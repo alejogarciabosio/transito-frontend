@@ -17,7 +17,7 @@ export default class ErrorBoundary extends Component {
     return (
       <div role="alert" className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-6 text-center">
         <h1 className="text-2xl font-bold text-slate-900">Algo salió mal</h1>
-        <p className="max-w-md text-sm text-slate-500">
+        <p className="max-w-md text-sm text-slate-600">
           La pantalla tuvo un problema inesperado. Recargá la página; si sigue pasando, comunicate con la Línea Municipal 147.
         </p>
         <button
