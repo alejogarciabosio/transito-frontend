@@ -127,6 +127,9 @@ function RegistrarInfraccionForm({ onSubmit }) {
   );
 }
 
+// El backend todavía no guarda el texto del descargo (HU-INF-04): si llega `appealReason`, se muestra.
+const APPEAL_TEXT_PENDING = "El sistema todavía no guarda el texto del descargo (pendiente en el backend, HU-INF-04). Pedí la documentación por mesa de entradas.";
+
 export function InfraccionesStaff({ infractions, resource, role, onCreate, onConfirm, onAnnul }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [detail, setDetail] = useState(null);
@@ -243,11 +246,7 @@ export function InfraccionesStaff({ infractions, resource, role, onCreate, onCon
             {detail.estado === "Apelada" && (
               <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-sky-700">
                 <p className="font-semibold">El vecino presentó un descargo</p>
-                <p className="mt-1">{detail.motivoDescargo ? (
-                    <>&ldquo;{detail.motivoDescargo}&rdquo;</>
-                  ) : (
-                    "El sistema todavía no guarda el texto del descargo (pendiente en el backend, HU-INF-04). Pedí la documentación por mesa de entradas."
-                  )}</p>
+                <p className="mt-1">{detail.motivoDescargo ? `“${detail.motivoDescargo}”` : APPEAL_TEXT_PENDING}</p>
                 {!canResolve && <p className="mt-3 text-xs text-sky-500">La resolución la realiza un administrador.</p>}
               </div>
             )}

@@ -116,6 +116,7 @@ export async function mockApi(page, overrides = {}) {
       const denied = need("INSPECTOR");
       if (denied) return reply(denied);
       const s = db.sessions.find((x) => x.sessionId === m[1]);
+      if (!s) return reply(problem(404, "Sesión inexistente"));
       // Igual que el backend: una sola infracción por sesión.
       if (db.infractions.some((i) => i.originParkingSessionId === s.sessionId)) return reply(problem(409, `La sesión ${s.sessionId} ya tiene una infracción por falta de pago`));
       const created = {
@@ -130,6 +131,7 @@ export async function mockApi(page, overrides = {}) {
       const denied = need("ADMINISTRADOR");
       if (denied) return reply(denied);
       const t = db.tariffs.find((x) => x.tariffId === m[1]);
+      if (!t) return reply(problem(404, "Tarifa inexistente"));
       // Igual que el backend: 409 si la zona tiene sesiones sin cerrar.
       if (db.sessions.some((x) => x.zoneId === t.zoneId && !x.endDateTime)) return reply(problem(409, `No se puede eliminar la tarifa ${t.tariffId}: hay sesiones activas dependientes en la zona`));
       db.tariffs = db.tariffs.filter((x) => x !== t);
