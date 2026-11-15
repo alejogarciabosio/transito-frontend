@@ -1,0 +1,19 @@
+/* Estilo para convertir manual.md a HTML/PDF (ver generar-pdf.sh). */
+@page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #0f172a; max-width: 900px; margin: 0 auto; }
+header#title-block-header { text-align: center; padding: 60mm 0 20mm; page-break-after: always; }
+header .title { font-size: 26pt; margin-bottom: 6mm; }
+header .subtitle { font-size: 14pt; color: #475569; }
+h1 { font-size: 18pt; border-bottom: 3px solid #dc2626; padding-bottom: 4px; margin-top: 0; page-break-before: always; }
+h2 { font-size: 13pt; margin-top: 18pt; color: #0f172a; page-break-after: avoid; }
+h1 + h2 { margin-top: 10pt; }
+p, li { orphans: 3; widows: 3; }
+img { display: block; max-width: 100%; max-height: 150mm; margin: 6pt auto; border: 1px solid #cbd5e1; border-radius: 4px; page-break-inside: avoid; }
+figure { margin: 8pt 0; page-break-inside: avoid; }
+figcaption { text-align: center; font-size: 9pt; color: #64748b; }
+table { border-collapse: collapse; width: 100%; font-size: 9pt; margin: 8pt 0; page-break-inside: avoid; }
+th, td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: left; vertical-align: top; }
+th { background: #f1f5f9; }
+blockquote { margin: 8pt 0; padding: 6pt 10pt; background: #fef2f2; border-left: 4px solid #dc2626; color: #7f1d1d; }
+code { font-size: 9pt; background: #f1f5f9; padding: 0 3px; border-radius: 3px; }
+a { color: #0369a1; text-decoration: none; }
