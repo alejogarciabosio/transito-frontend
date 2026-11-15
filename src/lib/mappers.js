@@ -17,9 +17,12 @@ export function mapApiInfraction(api) {
     monto: api.finalAmount ?? api.baseAmount,
     estado: INFRACTION_STATUS_LABEL[api.status] || api.status,
     fecha: formatDateTime(api.infractionDateTime),
-    // Hoy el backend no devuelve el texto del descargo (solo lo publica en el evento
-    // infractionAppealed). Si más adelante lo agrega, la pantalla lo muestra sola.
+    // Hoy el backend no guarda ni devuelve el texto del descargo (solo lo publica en el
+    // evento infractionAppealed; ver HU-INF-04). Si más adelante agrega `appealReason`,
+    // las pantallas lo muestran solas.
     motivoDescargo: api.appealReason,
+    // Sesión de estacionamiento que originó la infracción (falta de pago), si la hay.
+    sesionOrigenId: api.originParkingSessionId ?? null,
   };
 }
 

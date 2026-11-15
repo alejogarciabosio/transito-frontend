@@ -243,7 +243,11 @@ export function InfraccionesStaff({ infractions, resource, role, onCreate, onCon
             {detail.estado === "Apelada" && (
               <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-sky-700">
                 <p className="font-semibold">El vecino presentó un descargo</p>
-                <p className="mt-1">{detail.motivoDescargo || "El texto del descargo no está disponible en esta vista."}</p>
+                <p className="mt-1">{detail.motivoDescargo ? (
+                    <>&ldquo;{detail.motivoDescargo}&rdquo;</>
+                  ) : (
+                    "El sistema todavía no guarda el texto del descargo (pendiente en el backend, HU-INF-04). Pedí la documentación por mesa de entradas."
+                  )}</p>
                 {!canResolve && <p className="mt-3 text-xs text-sky-500">La resolución la realiza un administrador.</p>}
               </div>
             )}
