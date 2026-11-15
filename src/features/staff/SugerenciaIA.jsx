@@ -7,7 +7,7 @@ import { SUGGESTION_MAX_LENGTH, suggestInfraction } from "../../services/suggest
 const norm = (s) => s.trim().toLowerCase();
 
 // Traduce la sugerencia a valores que el formulario conoce; lo desconocido se descarta.
-export function resolveSuggestion(result) {
+function resolveSuggestion(result) {
   const tipo = INFRACTION_TYPES.find((t) => t.code === result.infractionType) || null;
   const agravantes = [];
   for (const f of result.aggravatingFactors) {
