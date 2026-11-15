@@ -3,6 +3,7 @@ import { AlertCircle, Filter, Plus } from "lucide-react";
 import { Badge, Button, DataTable, Field, Modal, ResourceStatus, Row, SectionToolbar } from "../../components/ui.jsx";
 import { AGGRAVATING_FACTORS, INFRACCION_ESTADO, INFRACTION_TYPES, inputCls } from "../../constants";
 import { cx, formatCurrency, nowForInput } from "../../lib/format";
+import { SugerenciaIA } from "./SugerenciaIA.jsx";
 
 function RegistrarInfraccionForm({ onSubmit }) {
   const [tipo, setTipo] = useState(INFRACTION_TYPES[0].code);
@@ -22,6 +23,12 @@ function RegistrarInfraccionForm({ onSubmit }) {
 
   const toggleAgravante = (code) => {
     setAgravantes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
+  };
+
+  // La sugerencia de IA solo pre-completa; el inspector puede cambiarla y confirma como siempre.
+  const aplicarSugerencia = ({ tipo: t, agravantes: a }) => {
+    if (t) setTipo(t);
+    setAgravantes(a);
   };
 
   const handleSubmit = async (e) => {
@@ -62,6 +69,7 @@ function RegistrarInfraccionForm({ onSubmit }) {
           <p className="mt-1 text-red-600">{error}</p>
         </div>
       )}
+      <SugerenciaIA onApply={aplicarSugerencia} />
       <div className="grid gap-x-4 sm:grid-cols-2">
         <Field label="Tipo de infracción" required>
           <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={inputCls}>
