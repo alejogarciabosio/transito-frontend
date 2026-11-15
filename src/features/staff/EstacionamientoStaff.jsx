@@ -215,6 +215,12 @@ function FaltaPagoForm({ session, zoneName, onSubmit, onDone }) {
   );
 }
 
+function PagoBadge({ session, flagged }) {
+  if (session.pagada) return <Badge tone="emerald">Pagada</Badge>;
+  if (flagged) return <Badge tone="red">Sin pagar · infracción generada</Badge>;
+  return <Badge tone="amber">Sin pagar</Badge>;
+}
+
 export function EstacionamientoStaff({
   zones,
   zonesResource,
@@ -285,17 +291,7 @@ export function EstacionamientoStaff({
     { header: "Zona", render: (r) => zoneName(r.zonaId) },
     { header: "Inicio", render: (r) => r.inicio },
     { header: "Fin", render: (r) => r.fin || "En curso" },
-    {
-      header: "Pago",
-      render: (r) =>
-        r.pagada ? (
-          <Badge tone="emerald">Pagada</Badge>
-        ) : flaggedSessionIds.has(r.id) ? (
-          <Badge tone="red">Sin pagar · infracción generada</Badge>
-        ) : (
-          <Badge tone="amber">Sin pagar</Badge>
-        ),
-    },
+    { header: "Pago", render: (r) => <PagoBadge session={r} flagged={flaggedSessionIds.has(r.id)} /> },
     ...(isInspector
       ? [
           {

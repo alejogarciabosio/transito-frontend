@@ -123,7 +123,7 @@ export function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
             </p>
             {/* El backend todavía no recibe archivos en el descargo (HU-INF-04 pendiente): no se
                 ofrece un campo que acepte adjuntos que después se perderían. */}
-            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-600" role="note">
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-600">
               <p className="font-semibold text-slate-700">Adjuntos: próximamente</p>
               <p className="mt-1">Por ahora el sistema no recibe archivos. Enviá la documentación por mesa de entradas, indicando el acta N.° {infraction.id}.</p>
             </div>
