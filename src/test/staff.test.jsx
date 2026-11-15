@@ -100,6 +100,7 @@ describe("Infracciones", () => {
     await tab(user, "Dashboard");
     await tab(user, "Infracciones");
     await user.click(await screen.findByText("AC456DE"));
+    expect(screen.getByText(/todavía no guarda el texto del descargo/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Aceptar descargo (anular)" }));
     const confirmar = screen.getByRole("button", { name: "Confirmar anulación" });
     expect(confirmar).toBeDisabled();
@@ -250,7 +251,7 @@ describe("Vehículos retenidos", () => {
 
 describe("Estacionamiento medido", () => {
   test("el administrador crea, edita y da de baja zonas y tarifas", async () => {
-    const { user, calls } = await enterAs("admin");
+    const { user, calls, db } = await enterAs("admin");
     await tab(user, "Estacionamiento medido");
     await user.click(screen.getByRole("button", { name: /Nueva zona/ }));
     let d = dialog();
@@ -277,9 +278,32 @@ describe("Estacionamiento medido", () => {
     await waitFor(() => expect(posted(calls, "POST", /^\/parking-tariffs$/)?.body.pricePerHour).toBe(2000));
     await user.click(within(dialog()).getAllByRole("button", { name: "Editar" })[0]);
     await user.click(within(dialog()).getByRole("button", { name: /Cancelar edición/ }));
+    db.sessions[0].endDateTime = "2026-11-02T11:00:00"; // sin sesiones abiertas el backend deja borrar
     await user.click(within(dialog()).getAllByRole("button", { name: "Eliminar" })[0]);
     await user.click(within(dialog()).getAllByRole("button", { name: /eliminar/i }).at(-1));
     await waitFor(() => expect(posted(calls, "DELETE", /^\/parking-tariffs\//)).toBeTruthy());
+  });
+
+  test("borrar una tarifa con sesiones activas (409) muestra un mensaje claro", async () => {
+    const { user, db } = await enterAs("admin");
+    await tab(user, "Estacionamiento medido");
+    await user.click((await screen.findAllByRole("button", { name: "Tarifas" }))[0]);
+    await user.click(within(dialog()).getAllByRole("button", { name: "Eliminar" })[0]);
+    await user.click(within(dialog()).getByRole("button", { name: /Sí, eliminar tarifa/ }));
+    expect(await within(dialog()).findByText(/No se puede borrar: hay sesiones activas en esa zona\/tarifa/)).toBeInTheDocument();
+    expect(db.tariffs).toHaveLength(1);
+  });
+
+  test("un error que no es 409 al borrar la tarifa muestra el detalle del backend", async () => {
+    const { user } = await enterAs("admin", {
+      "DELETE /parking-tariffs/66666666-0000-4000-8000-000000000012": () =>
+        new Response(JSON.stringify({ status: 500, detail: "Falla interna simulada" }), { status: 500 }),
+    });
+    await tab(user, "Estacionamiento medido");
+    await user.click((await screen.findAllByRole("button", { name: "Tarifas" }))[0]);
+    await user.click(within(dialog()).getAllByRole("button", { name: "Eliminar" })[0]);
+    await user.click(within(dialog()).getByRole("button", { name: /Sí, eliminar tarifa/ }));
+    expect(await within(dialog()).findByText(/Falla interna simulada/)).toBeInTheDocument();
   });
 
   test("el inspector marca una sesión impaga", async () => {
@@ -292,6 +316,39 @@ describe("Estacionamiento medido", () => {
     await user.type(importe, "5000");
     await user.click(within(d).getAllByRole("button", { name: /Generar|Marcar|Confirmar/ }).at(-1));
     await waitFor(() => expect(posted(calls, "POST", /unpaid-flag$/)?.body.baseAmount).toBe(5000));
+  });
+
+  test("una sesión ya marcada sin pago no ofrece de nuevo el botón", async () => {
+    const { user } = await enterAs("inspector");
+    await tab(user, "Estacionamiento medido");
+    await user.click(await screen.findByRole("button", { name: "Marcar falta de pago" }));
+    await user.click(within(dialog()).getByRole("button", { name: /Generar infracción/ }));
+    expect(await screen.findByText(/Sin pagar · infracción generada/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Marcar falta de pago" })).not.toBeInTheDocument();
+  });
+
+  test("si igual llega un 409 al marcar impago se muestra el detalle del Problem Details", async () => {
+    const { user } = await enterAs("inspector", {
+      "POST /parking-sessions/77777777-0000-4000-8000-000000000013/unpaid-flag": () =>
+        new Response(JSON.stringify({ status: 409, detail: "La sesión ya tiene una infracción por falta de pago" }), { status: 409 }),
+    });
+    await tab(user, "Estacionamiento medido");
+    await user.click(await screen.findByRole("button", { name: "Marcar falta de pago" }));
+    await user.click(within(dialog()).getByRole("button", { name: /Generar infracción/ }));
+    expect(await within(dialog()).findByText(/ya tiene una infracción por falta de pago/)).toBeInTheDocument();
+  });
+});
+
+describe("Panel interno: texto del descargo", () => {
+  test("si la API devuelve appealReason, el detalle de la infracción apelada lo muestra", async () => {
+    const api = installFakeApi();
+    api.db.infractions[1].appealReason = "El auto estaba en el taller";
+    const { user } = renderApp();
+    await loginAs(user, ...CREDENTIALS.admin);
+    await screen.findByText(/Panel de indicadores/i);
+    await tab(user, "Infracciones");
+    await user.click(await screen.findByText("AC456DE"));
+    expect(screen.getByText(/El auto estaba en el taller/)).toBeInTheDocument();
   });
 });
 

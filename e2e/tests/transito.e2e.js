@@ -102,4 +102,43 @@ test.describe("Escenarios críticos de punta a punta (API simulada)", () => {
     await expect.poll(() => db.closures[0].status).toBe("APPROVED");
     expect(posted(calls, /approval$/).body.detours).toEqual([{ street: "Av. Corrientes", alternateRoute: "Lavalle" }]);
   });
+
+  test("E2E-8 el vecino ve que los adjuntos del descargo todavía no se reciben (sin campo de archivos)", async ({ page }) => {
+    await mockApi(page);
+    await loginAs(page, "ciudadano");
+    await page.getByRole("button", { name: /Mis infracciones/ }).first().click();
+    await page.getByRole("button", { name: /Exceso de velocidad/ }).first().click();
+    await page.getByRole("button", { name: "Presentar descargo" }).last().click();
+    await expect(page.getByText("Adjuntos: próximamente")).toBeVisible();
+    await expect(page.getByText(/mesa de entradas/)).toBeVisible();
+    await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  });
+
+  test("E2E-9 el inspector marca una sesión sin pago y el botón deja de ofrecerse", async ({ page }) => {
+    const { db, calls } = await mockApi(page);
+    db.sessions.push({ sessionId: "77777777-0000-4000-8000-000000000013", licensePlate: "AB123CD", zoneId: "44444444-0000-4000-8000-000000000010", startDateTime: "2026-11-02T09:00:00", endDateTime: null, paid: false });
+    await loginAs(page, "inspector");
+    await expect(page.getByText(/Panel de indicadores/i)).toBeVisible();
+    await tab(page, "Estacionamiento medido");
+    await page.getByRole("button", { name: "Marcar falta de pago" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /Generar infracción/ }).click();
+    await expect(page.getByText("Sin pagar · infracción generada")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Marcar falta de pago" })).toHaveCount(0);
+    expect(calls.filter((c) => /unpaid-flag$/.test(c.path))).toHaveLength(1);
+  });
+
+  test("E2E-10 borrar una tarifa con sesiones activas muestra un mensaje claro (409)", async ({ page }) => {
+    const { db } = await mockApi(page);
+    db.tariffs.push({ tariffId: "66666666-0000-4000-8000-000000000012", zoneId: "44444444-0000-4000-8000-000000000010", pricePerHour: 1500, validFrom: "2026-01-01", validTo: "2026-12-31", status: "ACTIVE" });
+    db.sessions.push({ sessionId: "77777777-0000-4000-8000-000000000013", licensePlate: "AB123CD", zoneId: "44444444-0000-4000-8000-000000000010", startDateTime: "2026-11-02T09:00:00", endDateTime: null, paid: false });
+    await loginAs(page, "admin");
+    await expect(page.getByText(/Panel de indicadores/i)).toBeVisible();
+    await tab(page, "Estacionamiento medido");
+    await page.getByRole("button", { name: "Tarifas" }).first().click();
+    const d = page.getByRole("dialog");
+    await d.getByRole("button", { name: "Eliminar" }).first().click();
+    await d.getByRole("button", { name: /Sí, eliminar tarifa/ }).click();
+    await expect(d.getByText(/No se puede borrar: hay sesiones activas en esa zona\/tarifa/)).toBeVisible();
+    expect(db.tariffs).toHaveLength(1);
+  });
 });

@@ -95,6 +95,8 @@ export function AuthenticatedApp({ role, username, onLogout }) {
   const staffZones = useMemo(() => staffZonesRes.data.map(mapApiZone), [staffZonesRes.data]);
   const sessionsRes = useResource(getParkingSessions, { enabled: canAccessStaff });
   const sessions = useMemo(() => sessionsRes.data.map(mapApiSession), [sessionsRes.data]);
+  // Sesiones que ya tienen su infracción por falta de pago (originParkingSessionId).
+  const flaggedSessionIds = useMemo(() => new Set(staffInfractions.map((i) => i.sesionOrigenId).filter(Boolean)), [staffInfractions]);
 
   const reloadStaffClosures = staffClosuresRes.reload;
   const reloadOperations = operationsRes.reload;
@@ -127,6 +129,7 @@ export function AuthenticatedApp({ role, username, onLogout }) {
     if (staffView === "estacionamiento") {
       reloadStaffZones();
       reloadSessions();
+      void reloadStaffInfractions(); // reload ya captura sus errores; para saber qué sesiones ya tienen su infracción por falta de pago
     }
   }, [
     mode,
@@ -480,6 +483,7 @@ export function AuthenticatedApp({ role, username, onLogout }) {
             zonesResource={staffZonesRes}
             sessions={sessions}
             sessionsResource={sessionsRes}
+            flaggedSessionIds={flaggedSessionIds}
             role={role}
             onCreateZone={handleCreateZone}
             onUpdateZone={handleUpdateZone}

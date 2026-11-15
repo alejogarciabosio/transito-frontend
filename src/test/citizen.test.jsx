@@ -59,6 +59,10 @@ describe("Portal del vecino", () => {
     await user.click(await screen.findByRole("button", { name: /Exceso de velocidad/ }));
     await user.click(screen.getAllByRole("button", { name: "Presentar descargo" }).at(-1));
     const motivo = screen.getByLabelText(/Motivo del descargo/);
+    // Sin soporte de adjuntos en el backend: no hay campo de archivos, solo el aviso.
+    expect(screen.getByText(/Adjuntos: próximamente/)).toBeInTheDocument();
+    expect(screen.getByText(/mesa de entradas/)).toBeInTheDocument();
+    expect(document.querySelector('input[type="file"]')).toBeNull();
     await user.type(motivo, "El vehículo estaba vendido");
     await user.click(screen.getByRole("button", { name: /Enviar descargo/ }));
     expect(await screen.findByText(/Descargo registrado/i)).toBeInTheDocument();

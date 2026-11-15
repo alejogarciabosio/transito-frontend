@@ -5,6 +5,18 @@ import { INFRACTION_TYPES, inputCls } from "../../constants";
 import { useAction } from "../../hooks/useAction";
 import { formatCurrency, formatLocalDate } from "../../lib/format";
 
+// El backend responde 409 al borrar una tarifa si la zona tiene sesiones sin cerrar.
+export const TARIFF_IN_USE_MESSAGE = "No se puede borrar: hay sesiones activas en esa zona/tarifa. Esperá a que se cierren e intentá de nuevo.";
+
+async function deleteTariffWithClearError(onDelete, tariffId) {
+  try {
+    await onDelete(tariffId);
+  } catch (err) {
+    if (err?.status === 409) throw new Error(TARIFF_IN_USE_MESSAGE);
+    throw err;
+  }
+}
+
 function ZonaForm({ zone, onSubmit, onDone }) {
   const [name, setName] = useState(zone?.nombre ?? "");
   const [boundaries, setBoundaries] = useState(zone?.limites ?? "");
@@ -129,7 +141,7 @@ function TarifasPanel({ zone, onCreate, onUpdate, onDelete }) {
               variant="accent"
               disabled={del.acting}
               onClick={async () => {
-                if (await del.run(() => onDelete(deleting.tariffId))) {
+                if (await del.run(() => deleteTariffWithClearError(onDelete, deleting.tariffId))) {
                   if (editing?.tariffId === deleting.tariffId) reset();
                   setDeleting(null);
                 }
@@ -203,11 +215,18 @@ function FaltaPagoForm({ session, zoneName, onSubmit, onDone }) {
   );
 }
 
+function PagoBadge({ session, flagged }) {
+  if (session.pagada) return <Badge tone="emerald">Pagada</Badge>;
+  if (flagged) return <Badge tone="red">Sin pagar · infracción generada</Badge>;
+  return <Badge tone="amber">Sin pagar</Badge>;
+}
+
 export function EstacionamientoStaff({
   zones,
   zonesResource,
   sessions,
   sessionsResource,
+  flaggedSessionIds = new Set(),
   role,
   onCreateZone,
   onUpdateZone,
@@ -272,13 +291,14 @@ export function EstacionamientoStaff({
     { header: "Zona", render: (r) => zoneName(r.zonaId) },
     { header: "Inicio", render: (r) => r.inicio },
     { header: "Fin", render: (r) => r.fin || "En curso" },
-    { header: "Pago", render: (r) => <Badge tone={r.pagada ? "emerald" : "amber"}>{r.pagada ? "Pagada" : "Sin pagar"}</Badge> },
+    { header: "Pago", render: (r) => <PagoBadge session={r} flagged={flaggedSessionIds.has(r.id)} /> },
     ...(isInspector
       ? [
           {
             header: "Acciones",
+            // El backend admite una sola infracción por sesión: si ya se generó, no se ofrece de nuevo.
             render: (r) =>
-              r.pagada ? null : (
+              r.pagada || flaggedSessionIds.has(r.id) ? null : (
                 <Button size="sm" variant="danger" onClick={() => setFlagTarget(r)}>
                   Marcar falta de pago
                 </Button>

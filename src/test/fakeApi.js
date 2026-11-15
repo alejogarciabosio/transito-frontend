@@ -292,7 +292,10 @@ export function installFakeApi(overrides = {}) {
     }
     if ((m = key.match(/^(PUT|DELETE) \/parking-tariffs\/(.+)$/))) {
       const i = db.tariffs.findIndex((x) => x.tariffId === m[2]);
+      if (i < 0) return problem(404, "Tarifa inexistente");
       if (m[1] === "DELETE") {
+        const zoneId = db.tariffs[i].zoneId;
+        if (db.sessions.some((x) => x.zoneId === zoneId && !x.endDateTime)) return problem(409, `No se puede eliminar la tarifa ${m[2]}: hay sesiones activas dependientes en la zona`);
         db.tariffs.splice(i, 1);
         return json(204);
       }
@@ -301,7 +304,9 @@ export function installFakeApi(overrides = {}) {
     }
     if ((m = key.match(/^POST \/parking-sessions\/(.+)\/unpaid-flag$/))) {
       const s = db.sessions.find((x) => x.sessionId === m[1]);
-      const inf = { infractionId: uuid(), licensePlate: s.licensePlate, infractionType: "UNPAID_PARKING", status: "PENDING_APPEAL", finalAmount: body.baseAmount, baseAmount: body.baseAmount, location: {}, evidenceUrl: [], aggravatingFactors: [], infractionDateTime: "2026-11-02T10:00:00" };
+      if (!s) return problem(404, "Sesión inexistente");
+      if (db.infractions.some((x) => x.originParkingSessionId === s.sessionId)) return problem(409, `La sesión ${s.sessionId} ya tiene una infracción por falta de pago`);
+      const inf = { infractionId: uuid(), originParkingSessionId: s.sessionId, licensePlate: s.licensePlate, infractionType: "UNPAID_PARKING", status: "PENDING_APPEAL", finalAmount: body.baseAmount, baseAmount: body.baseAmount, location: {}, evidenceUrl: [], aggravatingFactors: [], infractionDateTime: "2026-11-02T10:00:00" };
       db.infractions.push(inf);
       return json(201, inf);
     }

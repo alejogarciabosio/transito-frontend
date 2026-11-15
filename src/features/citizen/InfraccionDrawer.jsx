@@ -13,16 +13,10 @@ import { formatCurrency } from "../../lib/format";
 export function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
   const [step, setStep] = useState("detail");
   const [motivo, setMotivo] = useState("");
-  const [docs, setDocs] = useState([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   if (!infraction) return null;
-
-  const handleAddDoc = (e) => {
-    const files = Array.from(e.target.files || []);
-    setDocs((d) => [...d, ...files.map((f) => f.name)]);
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -127,19 +121,12 @@ export function InfraccionDrawer({ infraction, onClose, onSubmitDescargo }) {
             <p className="mb-1.5 mt-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-red-700">
               <span className="h-px w-5 bg-red-600" /> Documentación
             </p>
-            <Field label="Adjuntar respaldo (opcional)">
-              <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500 hover:border-slate-400">
-                Hacé clic para subir archivos
-                <input type="file" multiple className="hidden" onChange={handleAddDoc} />
-              </label>
-              {docs.length > 0 && (
-                <ul className="mt-2 space-y-1 text-xs text-slate-600">
-                  {docs.map((d, i) => (
-                    <li key={i}>· {d}</li>
-                  ))}
-                </ul>
-              )}
-            </Field>
+            {/* El backend todavía no recibe archivos en el descargo (HU-INF-04 pendiente): no se
+                ofrece un campo que acepte adjuntos que después se perderían. */}
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+              <p className="font-semibold text-slate-700">Adjuntos: próximamente</p>
+              <p className="mt-1">Por ahora el sistema no recibe archivos. Enviá la documentación por mesa de entradas, indicando el acta N.° {infraction.id}.</p>
+            </div>
             <Button type="submit" variant="primary" className="mt-4 w-full" disabled={submitting}>
               {submitting ? "Enviando..." : "Enviar descargo"}
             </Button>

@@ -112,6 +112,31 @@ export async function mockApi(page, overrides = {}) {
       Object.assign(c, m[2] === "approval" ? { detours: body.detours, conditions: body.conditions, status: "APPROVED" } : { status: "REJECTED" });
       return reply(ok(200, c));
     }
+    if ((m = key.match(/^POST \/parking-sessions\/(.+)\/unpaid-flag$/))) {
+      const denied = need("INSPECTOR");
+      if (denied) return reply(denied);
+      const s = db.sessions.find((x) => x.sessionId === m[1]);
+      if (!s) return reply(problem(404, "Sesión inexistente"));
+      // Igual que el backend: una sola infracción por sesión.
+      if (db.infractions.some((i) => i.originParkingSessionId === s.sessionId)) return reply(problem(409, `La sesión ${s.sessionId} ya tiene una infracción por falta de pago`));
+      const created = {
+        infractionId: `99999999-0000-4000-8000-${String(++seq).padStart(12, "0")}`, originParkingSessionId: s.sessionId, licensePlate: s.licensePlate,
+        infractionType: "UNPAID_PARKING", infractionDateTime: "2026-11-02T10:00:00", location: {}, evidenceUrl: [], aggravatingFactors: [],
+        baseAmount: body.baseAmount, finalAmount: body.baseAmount, status: "PENDING_APPEAL",
+      };
+      db.infractions.push(created);
+      return reply(ok(201, created));
+    }
+    if ((m = key.match(/^DELETE \/parking-tariffs\/(.+)$/))) {
+      const denied = need("ADMINISTRADOR");
+      if (denied) return reply(denied);
+      const t = db.tariffs.find((x) => x.tariffId === m[1]);
+      if (!t) return reply(problem(404, "Tarifa inexistente"));
+      // Igual que el backend: 409 si la zona tiene sesiones sin cerrar.
+      if (db.sessions.some((x) => x.zoneId === t.zoneId && !x.endDateTime)) return reply(problem(409, `No se puede eliminar la tarifa ${t.tariffId}: hay sesiones activas dependientes en la zona`));
+      db.tariffs = db.tariffs.filter((x) => x !== t);
+      return reply(ok(204));
+    }
     return reply(problem(404, `Ruta no simulada: ${key}`));
   });
 
