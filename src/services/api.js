@@ -41,9 +41,10 @@ function getToken() {
 }
 
 /**
- * DNI del usuario logueado, leído del claim `nationalId` del JWT.
- * Solo para mostrar información en pantalla: la autorización real
- * la hace siempre el backend con el token.
+ * DNI leído del claim `nationalId` de un JWT viejo (anterior a DEF-06).
+ * Los tokens nuevos ya no lo traen: el DNI se pide a GET /auth/me.
+ * Queda solo como respaldo mientras convivan tokens viejos o un backend sin /auth/me.
+ * Solo para mostrar información en pantalla: la autorización la hace el backend.
  */
 export function getCurrentNationalId() {
   const token = getToken();

@@ -35,8 +35,11 @@ describe("apiFetch", () => {
     installFakeApi({ "GET /parking-zones": () => new Response(null, { status: 204 }) });
     expect(await apiFetch("/parking-zones", { auth: false })).toBeNull();
   });
-  test("lee el DNI del token guardado", () => {
+  test("DEF-06: el token nuevo no trae DNI; uno viejo con claim nationalId se sigue leyendo", () => {
     sessionStorage.setItem("transito_token", tokenFor("ciudadano1"));
+    expect(getCurrentNationalId()).toBeNull();
+    const legacy = `${btoa(JSON.stringify({ alg: "HS256" }))}.${btoa(JSON.stringify({ sub: "u-1007", nationalId: "30777888", role: "CIUDADANO" }))}.firma`;
+    sessionStorage.setItem("transito_token", legacy);
     expect(getCurrentNationalId()).toBe("30777888");
     sessionStorage.setItem("transito_token", "no-es-un-jwt");
     expect(getCurrentNationalId()).toBeNull();

@@ -109,6 +109,17 @@ describe("Portal del vecino", () => {
     await user.click(screen.getByRole("button", { name: /Volver/ }));
     await user.click(card("Accidentes y denuncias"));
     expect(await screen.findByText(/Av. Cabildo/)).toBeInTheDocument();
+    // DEF-06: el DNI llega de GET /auth/me (no del JWT) y marca al vecino en su siniestro.
+    expect(await screen.findByText(/Figurás como persona involucrada/)).toBeInTheDocument();
+  });
+
+  test("DEF-06: si /auth/me falla (backend viejo), la pantalla igual carga", async () => {
+    const { user, calls } = await enterAsCitizen({
+      "GET /auth/me": () => new Response(JSON.stringify({ status: 404, detail: "No existe" }), { status: 404 }),
+    });
+    await user.click(card("Accidentes y denuncias"));
+    expect(await screen.findByText(/Av. Cabildo/)).toBeInTheDocument();
+    expect(calls.some((c) => c.path === "/auth/me")).toBe(true);
   });
 
   test("un error al cargar se puede reintentar", async () => {

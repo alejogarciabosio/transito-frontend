@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { createAccident, getAccidents, getMyAccidents, verifyAccident } from "./services/accidents";
 import { getCurrentNationalId } from "./services/api";
+import { getMe } from "./services/auth";
 import { createImpoundment, getImpoundments, getMyImpoundments, releaseImpoundment, updateImpoundment } from "./services/impoundments";
 import { annulInfraction, appealInfraction, confirmInfraction, createInfraction, getAllInfractions, getMyInfractions } from "./services/infractions";
 import { closeOperation, createOperation, getOperations } from "./services/operations";
@@ -61,7 +62,21 @@ export function AuthenticatedApp({ role, username, onLogout }) {
   // Datos reales del Portal vecino. Los "mine" solo existen para CIUDADANO:
   // para el resto de los roles no se piden y la pantalla lo explica.
   const isCitizen = role === "CIUDADANO";
-  const nationalId = getCurrentNationalId();
+  // DEF-06: el DNI ya no viene en el JWT; se pide al backend (solo el propio).
+  // Si el backend todavía no tiene /auth/me, se usa el claim de un token viejo.
+  const [nationalId, setNationalId] = useState(() => getCurrentNationalId());
+  useEffect(() => {
+    if (!isCitizen) return undefined;
+    let active = true;
+    getMe()
+      .then((me) => {
+        if (active && me?.nationalId) setNationalId(me.nationalId);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isCitizen]);
   // Infracciones del Panel interno (GET /infractions: INSPECTOR y ADMINISTRADOR).
   const staffInfractionsRes = useResource(getAllInfractions, { enabled: canAccessStaff });
   const staffInfractions = useMemo(() => staffInfractionsRes.data.map(mapApiInfraction), [staffInfractionsRes.data]);

@@ -10,7 +10,10 @@ const USERS = {
 };
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
-export const tokenFor = (u) => `${b64({ alg: "HS256" })}.${b64({ sub: USERS[u].userId, nationalId: USERS[u].nationalId, role: USERS[u].role })}.firma`;
+export const tokenFor = (u) => `${b64({ alg: "HS256" })}.${b64({ sub: USERS[u].userId, role: USERS[u].role })}.firma`;
+
+// DEF-06: el token no trae el DNI; el "servidor" falso lo resuelve por subject.
+const dniOf = (claims) => Object.values(USERS).find((x) => x.userId === claims?.sub)?.nationalId ?? null;
 
 export function seed() {
   const inf = (n, plate, type, dt, street, cross, nid, base, fin, status, agg = []) => ({
@@ -76,12 +79,13 @@ export async function mockApi(page, overrides = {}) {
       if (!user || user.password !== body.password) return reply(problem(401, "Usuario o contraseña inválidos"));
       return reply(ok(200, { token: tokenFor(body.username), role: user.role, expiresInSeconds: 7200 }));
     }
+    if (key === "GET /auth/me") return reply(need("CIUDADANO", "INSPECTOR", "ADMINISTRADOR", "AUDITOR") || ok(200, { userId: claims.sub, role: claims.role, nationalId: dniOf(claims) }));
     if (key === "GET /parking-zones") return reply(ok(200, db.zones));
     if (key === "GET /parking-tariffs") return reply(ok(200, db.tariffs));
     if (key === "GET /street-closures/current") return reply(ok(200, db.closures.filter((c) => ["APPROVED", "ACTIVE"].includes(c.status))));
 
     let m;
-    if (key === "GET /infractions/mine") return reply(need("CIUDADANO") || ok(200, db.infractions.filter((i) => i.offenderNationalId === claims.nationalId)));
+    if (key === "GET /infractions/mine") return reply(need("CIUDADANO") || ok(200, db.infractions.filter((i) => i.offenderNationalId === dniOf(claims))));
     if (key === "GET /accidents/mine" || key === "GET /impoundments/mine") return reply(need("CIUDADANO") || ok(200, []));
 
     const lists = { "/infractions": "infractions", "/operations": "operations", "/accidents": "accidents", "/impoundments": "impoundments", "/street-closures": "closures", "/parking-sessions": "sessions" };
