@@ -10,14 +10,16 @@ const puppeteer = require("puppeteer-core");
 const { startFlow } = await import("lighthouse");
 const out = process.argv[2];
 const { server, url } = await startServer();
-const browser = await chromium.launch({ args: ["--remote-debugging-port=9333"] });
+const PORT = 20000 + Math.floor(Math.random() * 20000);
+const browser = await chromium.launch({ args: [`--remote-debugging-port=${PORT}`] });
 const rows = [];
 for (const screen of SCREENS) {
   for (const width of WIDTHS) {
     const { ctx } = await openScreen(browser, url, screen, width);
-    const pptr = await puppeteer.connect({ browserURL: "http://127.0.0.1:9333", defaultViewport: null });
+    const pptr = await puppeteer.connect({ browserURL: `http://127.0.0.1:${PORT}`, defaultViewport: null });
     const pages = await pptr.pages();
     const target = pages.find((p) => p.url().startsWith(url));
+    if (!target) throw new Error("No se encontró la pestaña a auditar");
     const flow = await startFlow(target, { config: { extends: "lighthouse:default", settings: { onlyCategories: ["accessibility"] } } });
     await flow.snapshot({ name: `${screen.id}@${width}` });
     const lhr = (await flow.createFlowResult()).steps[0].lhr;
