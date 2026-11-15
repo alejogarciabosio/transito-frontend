@@ -18,7 +18,7 @@ export function MisInfracciones({ infractions, loading, error, onRetry, onOpen, 
         desc="Estas son las infracciones registradas a tu nombre. Podés revisar el detalle y presentar un descargo cuando corresponda."
       />
       <div className="mt-8 space-y-4">
-        {loading && <p className="text-sm text-slate-500">Cargando tus infracciones...</p>}
+        {loading && <p className="text-sm text-slate-600">Cargando tus infracciones...</p>}
 
         {!loading && error && (
           <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm">
@@ -43,7 +43,7 @@ export function MisInfracciones({ infractions, loading, error, onRetry, onOpen, 
               </div>
               <div>
                 <p className="font-semibold text-slate-900">{inf.tipoLabel}</p>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-slate-600">
                   {inf.calle} · {inf.fecha} · Patente {inf.patente}
                 </p>
               </div>

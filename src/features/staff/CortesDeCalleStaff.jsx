@@ -49,7 +49,7 @@ function EvaluarCorteForm({ closure, onApprove, onReject, onDone }) {
     <form onSubmit={handleSubmit}>
       <div className="mb-4 rounded-lg bg-slate-50 p-4 text-sm">
         <p className="font-semibold text-slate-800">{closure.calle}</p>
-        <p className="text-slate-500">
+        <p className="text-slate-600">
           Solicitado por {closure.solicitante} · {closure.fechaInicio} — {closure.fechaFin}
         </p>
       </div>
@@ -61,7 +61,7 @@ function EvaluarCorteForm({ closure, onApprove, onReject, onDone }) {
             onClick={() => setDecision("Aprobado")}
             className={cx(
               "flex-1 rounded-lg border px-3 py-2 text-sm font-medium",
-              decision === "Aprobado" ? "border-emerald-600 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-500"
+              decision === "Aprobado" ? "border-emerald-600 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"
             )}
           >
             Aprobar
@@ -71,7 +71,7 @@ function EvaluarCorteForm({ closure, onApprove, onReject, onDone }) {
             onClick={() => setDecision("Rechazado")}
             className={cx(
               "flex-1 rounded-lg border px-3 py-2 text-sm font-medium",
-              decision === "Rechazado" ? "border-red-600 bg-red-50 text-red-600" : "border-slate-200 text-slate-500"
+              decision === "Rechazado" ? "border-red-600 bg-red-50 text-red-700" : "border-slate-200 text-slate-600"
             )}
           >
             Rechazar
@@ -192,7 +192,7 @@ export function CortesDeCalleStaff({ closures, resource, role, onApprove, onReje
           <div>
             <div className="mb-4 rounded-lg bg-slate-50 p-4 text-sm">
               <p className="font-semibold text-slate-800">{finishTarget.calle}</p>
-              <p className="text-slate-500">Solicitado por {finishTarget.solicitante}</p>
+              <p className="text-slate-600">Solicitado por {finishTarget.solicitante}</p>
             </div>
             <ErrorNote title="No se pudo finalizar">{finish.error}</ErrorNote>
             <Field label="Observaciones de la finalización" required>

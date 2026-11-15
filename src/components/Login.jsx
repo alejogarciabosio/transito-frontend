@@ -71,25 +71,26 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-slate-900 text-white">
             <TrafficCone size={22} />
           </div>
           <h1 className="text-lg font-bold text-slate-900">Tránsito UADE</h1>
-          <p className="mt-1 text-sm text-slate-500">{cfg.subtitle}</p>
+          <p className="mt-1 text-sm text-slate-600">{cfg.subtitle}</p>
         </div>
 
-        <div className="mb-6 flex rounded-full border border-slate-200 bg-slate-50 p-1">
+        <div role="group" aria-label="Perfil de acceso" className="mb-6 flex rounded-full border border-slate-200 bg-slate-50 p-1">
           {Object.entries(PROFILES).map(([key, p]) => (
             <button
               key={key}
               type="button"
+              aria-pressed={profile === key}
               onClick={() => handleProfileChange(key)}
               className={cx(
                 "flex-1 rounded-full py-1.5 text-sm font-medium transition-colors",
-                profile === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                profile === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-700"
               )}
             >
               {p.label}
@@ -105,7 +106,7 @@ export default function Login() {
         )}
 
         {error && (
-          <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-600">
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-700">
             <AlertCircle size={16} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </div>
@@ -149,6 +150,6 @@ export default function Login() {
           </button>
         </form>
       </div>
-    </div>
+    </main>
   );
 }

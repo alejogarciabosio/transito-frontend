@@ -83,7 +83,7 @@ function CrearAccidenteForm({ onSubmit, onDone }) {
           </Button>
         </div>
         {personas.length > 0 && (
-          <ul className="mt-2 space-y-1 text-xs text-slate-500">
+          <ul className="mt-2 space-y-1 text-xs text-slate-600">
             {personas.map((p, i) => (
               <li key={i}>
                 · DNI {p.nationalId} — {INJURY_OPTION_LABEL[p.injuryLevel]}
@@ -102,7 +102,7 @@ function CrearAccidenteForm({ onSubmit, onDone }) {
           </Button>
         </div>
         {vehiculos.length > 0 && (
-          <ul className="mt-2 space-y-1 text-xs text-slate-500">
+          <ul className="mt-2 space-y-1 text-xs text-slate-600">
             {vehiculos.map((v, i) => (
               <li key={i}>
                 · {v.licensePlate}

@@ -13,17 +13,17 @@ export function Header({ mode, onModeChange, username, role, onLogout, canAccess
           </div>
           <div className="text-left">
             <p className="text-base font-bold leading-none text-slate-900">Tránsito UADE</p>
-            <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-400">Seguridad vial municipal</p>
+            <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">Seguridad vial municipal</p>
           </div>
         </button>
 
         {canAccessStaff && (
-          <nav className="hidden items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1 md:flex">
+          <nav aria-label="Modo de uso" className="hidden items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1 md:flex">
             <button
               onClick={() => onModeChange("ciudadano")}
               className={cx(
                 "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                mode === "ciudadano" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                mode === "ciudadano" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-700"
               )}
             >
               Portal vecino
@@ -32,7 +32,7 @@ export function Header({ mode, onModeChange, username, role, onLogout, canAccess
               onClick={() => onModeChange("staff")}
               className={cx(
                 "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                mode === "staff" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                mode === "staff" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-700"
               )}
             >
               Panel interno
@@ -50,20 +50,20 @@ export function Header({ mode, onModeChange, username, role, onLogout, canAccess
         </div>
       </div>
       {canAccessStaff && (
-        <div className="flex border-t border-slate-100 md:hidden">
+        <nav aria-label="Modo de uso (móvil)" className="flex border-t border-slate-100 md:hidden">
           <button
             onClick={() => onModeChange("ciudadano")}
-            className={cx("flex-1 py-2 text-sm font-medium", mode === "ciudadano" ? "border-b-2 border-slate-900 text-slate-900" : "text-slate-400")}
+            className={cx("flex-1 py-2 text-sm font-medium", mode === "ciudadano" ? "border-b-2 border-slate-900 text-slate-900" : "text-slate-500")}
           >
             Portal vecino
           </button>
           <button
             onClick={() => onModeChange("staff")}
-            className={cx("flex-1 py-2 text-sm font-medium", mode === "staff" ? "border-b-2 border-slate-900 text-slate-900" : "text-slate-400")}
+            className={cx("flex-1 py-2 text-sm font-medium", mode === "staff" ? "border-b-2 border-slate-900 text-slate-900" : "text-slate-500")}
           >
             Panel interno
           </button>
-        </div>
+        </nav>
       )}
     </header>
   );

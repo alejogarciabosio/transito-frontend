@@ -117,7 +117,7 @@ function TarifasPanel({ zone, onCreate, onUpdate, onDelete }) {
           <p className="font-semibold text-red-700">
             ¿Eliminar la tarifa de {formatCurrency(deleting.pricePerHour)}/hora ({formatLocalDate(deleting.validFrom)} al {formatLocalDate(deleting.validTo)})?
           </p>
-          <p className="mt-1 text-red-600">Dejará de mostrarse en la zona. Esta acción no se puede deshacer desde acá.</p>
+          <p className="mt-1 text-red-700">Dejará de mostrarse en la zona. Esta acción no se puede deshacer desde acá.</p>
           {del.error && (
             <p className="mt-2 flex items-center gap-2 font-medium text-red-700">
               <AlertCircle size={15} /> {del.error}
@@ -188,7 +188,7 @@ function FaltaPagoForm({ session, zoneName, onSubmit, onDone }) {
     <form onSubmit={handleSubmit}>
       <div className="mb-4 rounded-lg bg-slate-50 p-4 text-sm">
         <p className="font-mono font-semibold text-slate-800">{session.patente}</p>
-        <p className="text-slate-500">
+        <p className="text-slate-600">
           {zoneName} · desde {session.inicio}
         </p>
       </div>
@@ -309,7 +309,7 @@ export function EstacionamientoStaff({
       <div>
         <p className="mb-3 text-sm font-semibold text-slate-700">Sesiones de estacionamiento</p>
         {isInspector && (
-          <p className="mb-3 text-xs text-slate-400">Marcar la falta de pago de una sesión genera una infracción en la gestión de infracciones.</p>
+          <p className="mb-3 text-xs text-slate-500">Marcar la falta de pago de una sesión genera una infracción en la gestión de infracciones.</p>
         )}
         <ResourceStatus resource={sessionsResource} loadingText="Cargando sesiones..." />
         {sessionsResource.loaded && <DataTable columns={sessionColumns} data={sessions} emptyLabel="Todavía no hay sesiones registradas" />}

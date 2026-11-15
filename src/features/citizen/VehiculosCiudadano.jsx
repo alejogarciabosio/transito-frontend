@@ -38,10 +38,10 @@ export function VehiculosCiudadano({ resource, isCitizen, onBack }) {
                   <p className="text-lg font-bold text-slate-900">{v.licensePlate}</p>
                   <Badge tone={ui.tone}>{ui.label}</Badge>
                 </div>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-slate-600">
                   Depósito: {v.depotLocation} · Ingreso: {formatDateTime(v.entryDateTime)}
                 </p>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-slate-600">
                   Motivo: {v.reason} ({IMPOUNDMENT_ORIGIN_LABEL[v.originType] || v.originType})
                 </p>
 
@@ -56,7 +56,7 @@ export function VehiculosCiudadano({ resource, isCitizen, onBack }) {
                       ))}
                     </ul>
                     {v.towingAndStorageFee != null && (
-                      <p className="mt-4 text-sm text-slate-500">
+                      <p className="mt-4 text-sm text-slate-600">
                         Acarreo y estadía abonados:{" "}
                         <strong className="text-slate-800">{formatCurrency(v.towingAndStorageFee)}</strong>
                         {v.paymentReference ? ` · Comprobante ${v.paymentReference}` : ""}
@@ -68,12 +68,12 @@ export function VehiculosCiudadano({ resource, isCitizen, onBack }) {
                     <p className="mt-4 text-sm font-medium text-slate-700">Requisitos para liberarlo</p>
                     <ul className="mt-2 space-y-1.5 text-sm">
                       {Object.values(REQUISITO_LABEL).map((r) => (
-                        <li key={r} className="flex items-center gap-2 text-slate-500">
+                        <li key={r} className="flex items-center gap-2 text-slate-600">
                           <AlertCircle size={15} className="text-amber-500" /> {r}
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-4 text-xs text-slate-400">
+                    <p className="mt-4 text-xs text-slate-500">
                       El personal del depósito verifica los requisitos y calcula el costo de acarreo y estadía al momento
                       de la liberación.
                     </p>

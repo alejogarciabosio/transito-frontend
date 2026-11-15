@@ -71,7 +71,7 @@ function CrearOperativoForm({ onSubmit, onDone }) {
               onClick={() => toggleInsp(i)}
               className={cx(
                 "rounded-full border px-3 py-1.5 text-xs font-medium",
-                inspectores.includes(i) ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-500"
+                inspectores.includes(i) ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600"
               )}
             >
               {i}
@@ -112,7 +112,7 @@ export function OperativosStaff({ operativos, resource, role, onCreate, onClose 
       render: (r) => (
         <div>
           <Badge tone={OPERATION_STATUS_UI[r.status]?.tone}>{OPERATION_STATUS_UI[r.status]?.label || r.status}</Badge>
-          {r.resolucion && <p className="mt-1 text-xs text-slate-500">{r.resolucion}</p>}
+          {r.resolucion && <p className="mt-1 text-xs text-slate-600">{r.resolucion}</p>}
         </div>
       ),
     },
@@ -159,7 +159,7 @@ export function OperativosStaff({ operativos, resource, role, onCreate, onClose 
               <p className="font-semibold text-slate-800">
                 {closeTarget.tipo} · {closeTarget.zona}
               </p>
-              <p className="text-slate-500">{closeTarget.inicio}</p>
+              <p className="text-slate-600">{closeTarget.inicio}</p>
             </div>
             <ErrorNote title="No se pudo cerrar">{closing.error}</ErrorNote>
             <Field label="Resultado del operativo" required>

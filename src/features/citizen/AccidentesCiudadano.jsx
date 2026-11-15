@@ -37,7 +37,7 @@ export function AccidentesCiudadano({ resource, isCitizen, nationalId, onBack })
                   <p className="font-semibold text-slate-900">{where || "Ubicación a confirmar"}</p>
                   <Badge tone={ui.tone}>{ui.label}</Badge>
                 </div>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-slate-600">
                   {formatDateTime(a.accidentDateTime)} · {plural(a.vehicles?.length || 0, "vehículo involucrado", "vehículos involucrados")}
                 </p>
                 <ul className="mt-3 space-y-1 text-sm text-slate-600">
@@ -46,7 +46,7 @@ export function AccidentesCiudadano({ resource, isCitizen, nationalId, onBack })
                     <li key={v.licensePlate}>Figurás como titular del vehículo {v.licensePlate}.</li>
                   ))}
                   {a.involvesInfrastructureDamage && (
-                    <li className="text-slate-500">Daños en la vía pública{a.damageDescription ? `: ${a.damageDescription}` : ""}.</li>
+                    <li className="text-slate-600">Daños en la vía pública{a.damageDescription ? `: ${a.damageDescription}` : ""}.</li>
                   )}
                 </ul>
               </div>

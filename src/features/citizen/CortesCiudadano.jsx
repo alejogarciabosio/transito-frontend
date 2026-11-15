@@ -28,7 +28,7 @@ export function CortesCiudadano({ resource, onBack }) {
                   </p>
                   <Badge tone={ui.tone}>{ui.label}</Badge>
                 </div>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-slate-600">
                   {formatDateTime(c.startDate)} — {formatDateTime(c.endDate)} · Solicitado por{" "}
                   {REQUESTING_MODULE_LABEL[c.requestingModule] || c.requestingModule}
                 </p>
@@ -36,7 +36,7 @@ export function CortesCiudadano({ resource, onBack }) {
                   <ul className="mt-3 space-y-1 text-sm text-slate-600">
                     {c.detours.map((d, i) => (
                       <li key={i} className="flex items-start gap-2">
-                        <MapPin size={14} className="mt-0.5 shrink-0 text-slate-400" />
+                        <MapPin size={14} className="mt-0.5 shrink-0 text-slate-500" />
                         <span>
                           Desvío por <strong className="font-medium text-slate-800">{d.alternateRoute}</strong>
                           {d.street ? ` (en ${d.street})` : ""}
@@ -46,7 +46,7 @@ export function CortesCiudadano({ resource, onBack }) {
                   </ul>
                 )}
                 {c.conditions?.length > 0 && (
-                  <p className="mt-2 text-xs text-slate-400">Condiciones: {c.conditions.join(" · ")}</p>
+                  <p className="mt-2 text-xs text-slate-500">Condiciones: {c.conditions.join(" · ")}</p>
                 )}
               </div>
             );
