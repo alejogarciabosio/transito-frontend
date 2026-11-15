@@ -10,7 +10,10 @@ const USERS = {
 };
 
 const b64 = (o) => btoa(JSON.stringify(o)).replace(/=+$/, "");
-export const tokenFor = (user) => `${b64({ alg: "HS256" })}.${b64({ sub: USERS[user].userId, nationalId: USERS[user].nationalId, role: USERS[user].role })}.firma`;
+export const tokenFor = (user) => `${b64({ alg: "HS256" })}.${b64({ sub: USERS[user].userId, role: USERS[user].role })}.firma`;
+
+// DEF-06: el token no trae el DNI; el "servidor" falso lo resuelve por subject.
+const dniOf = (claims) => Object.values(USERS).find((x) => x.userId === claims?.sub)?.nationalId ?? null;
 
 let seq = 0;
 const uuid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
@@ -182,6 +185,7 @@ export function installFakeApi(overrides = {}) {
       if (!user || user.password !== body.password) return problem(401, "Usuario o contraseña inválidos");
       return json(200, { token: tokenFor(body.username), role: user.role, expiresInSeconds: 7200 });
     }
+    if (key === "GET /auth/me") return need("CIUDADANO", "INSPECTOR", "ADMINISTRADOR", "AUDITOR") || json(200, { userId: claims.sub, role: claims.role, nationalId: dniOf(claims) });
     // Públicos
     if (key === "GET /parking-zones") return json(200, db.zones);
     if (key === "GET /parking-tariffs") return json(200, db.tariffs.filter((t) => t.zoneId === u.searchParams.get("zoneId")));
@@ -189,9 +193,9 @@ export function installFakeApi(overrides = {}) {
 
     let m;
     // Ciudadano
-    if (key === "GET /infractions/mine") return need("CIUDADANO") || json(200, db.infractions.filter((i) => i.offenderNationalId === claims.nationalId));
-    if (key === "GET /accidents/mine") return need("CIUDADANO") || json(200, db.accidents.filter((a) => a.persons.some((p) => p.nationalId === claims.nationalId)));
-    if (key === "GET /impoundments/mine") return need("CIUDADANO") || json(200, db.impoundments.filter((v) => v.ownerNationalId === claims.nationalId));
+    if (key === "GET /infractions/mine") return need("CIUDADANO") || json(200, db.infractions.filter((i) => i.offenderNationalId === dniOf(claims)));
+    if (key === "GET /accidents/mine") return need("CIUDADANO") || json(200, db.accidents.filter((a) => a.persons.some((p) => p.nationalId === dniOf(claims))));
+    if (key === "GET /impoundments/mine") return need("CIUDADANO") || json(200, db.impoundments.filter((v) => v.ownerNationalId === dniOf(claims)));
     if ((m = key.match(/^POST \/infractions\/(.+)\/appeal$/))) {
       const denied = need("CIUDADANO");
       if (denied) return denied;
