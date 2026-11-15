@@ -12,7 +12,7 @@ async function deleteTariffWithClearError(onDelete, tariffId) {
   try {
     await onDelete(tariffId);
   } catch (err) {
-    if (err?.status === 409) throw new Error(TARIFF_IN_USE_MESSAGE, { cause: err });
+    if (err?.status === 409) throw new Error(TARIFF_IN_USE_MESSAGE);
     throw err;
   }
 }
